@@ -21,11 +21,14 @@ jobs:
         run: |
           node --check app.js
           node --check art.js
+          node --check wallet.js
+          node --check live.js
+          node --test tests/wallet.test.cjs
       - uses: actions/configure-pages@v5
       - name: Prepare static files
         run: |
           mkdir -p _site
-          cp index.html styles.css app.js art.js _site/
+          cp index.html styles.css app.js art.js wallet.js live.js _site/
       - uses: actions/upload-pages-artifact@v4
         with:
           path: _site

@@ -1,6 +1,6 @@
 'use strict';
 
-// UI simulation only: no wallet, RPC, camera, or transaction requests.
+// This file owns preview mode. Live wallet behavior is isolated in live.js/wallet.js.
 const preview = new URLSearchParams(location.search).has('preview');
 document.body.classList.toggle('is-preview', preview);
 const mainStates = [
@@ -198,6 +198,7 @@ for(const [list,target] of [[mainStates,'stateNav'],[extraStates,'extraStates']]
   stateSelect.append(group);
 }
 document.addEventListener('click',event=>{
+  if(!preview)return;
   const b=event.target.closest('button');if(!b||b.disabled)return;
   if(b.dataset.state){selectState(b.dataset.state);return;}
   if(b.dataset.go){go(b.dataset.go);return;}
@@ -212,6 +213,7 @@ document.addEventListener('click',event=>{
   }
 });
 appScreen.addEventListener('input',event=>{
+  if(!preview)return;
   if(event.target.id!=='amountInput')return;
   const value=Number(event.target.value);amount=Number.isSafeInteger(value)&&value>0?value:0;
   document.getElementById('pointAmount').textContent=format(points());
@@ -225,5 +227,6 @@ document.getElementById('continueFlow').addEventListener('click',nextFlow);
 document.getElementById('previousState').addEventListener('click',()=>selectState(allStates[Math.max(0,allStates.findIndex(s=>s.id===currentId)-1)].id));
 document.getElementById('nextState').addEventListener('click',()=>selectState(allStates[Math.min(allStates.length-1,allStates.findIndex(s=>s.id===currentId)+1)].id));
 document.getElementById('resetButton').addEventListener('click',()=>{selectState('welcome');balance=0;});
-window.addEventListener('hashchange',()=>selectState(location.hash.slice(1)));
-if(location.hash)selectState(location.hash.slice(1));else go('welcome');
+window.addEventListener('hashchange',()=>{if(preview)selectState(location.hash.slice(1));});
+if(preview){if(location.hash)selectState(location.hash.slice(1));else go('welcome');}
+else BazaarLive.create({Wallet:BazaarWallet,illustration}).init();

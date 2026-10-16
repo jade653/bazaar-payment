@@ -1,7 +1,9 @@
 # GitHub Actions / Pages 배포
 
 `bazaar-ui`의 내용이 새 저장소 루트로 옮겨진 상태를 기준으로 합니다.
-워크플로는 준비되었으며 원격 저장소 생성·배포·도메인 설정은 아직 수행하지 않았습니다.
+저장소: https://github.com/jade653/bazaar-payment
+연결할 도메인: bazaar.mustree.kr
+워크플로는 준비되었으며 최초 Pages 설정과 DNS 연결이 필요합니다.
 현재 화면은 실제 충전·결제가 없는 시안입니다.
 
 1. 새 저장소 이름·소유자·공개 여부를 확정합니다.
@@ -30,3 +32,4 @@ Actions 배포에서 도메인은 Pages 설정으로 관리하며 CNAME 파일�
 공식 문서:
 - https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages
 - https://docs.github.com/en/pages/configuring-a-custom-domain-for-your-github-pages-site/managing-a-custom-domain-for-your-github-pages-site
+

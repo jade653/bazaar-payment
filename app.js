@@ -70,7 +70,7 @@ function balanceScreen(){
 }
 
 function receiveScreen(){
-  return title('직원에게<br>이 QR을 보여주세요.')+sampleQR()+
+  return title('현금 결제 후 직원에게<br>이 QR을 보여주세요.')+sampleQR()+
     (currentId==='topup-waiting'?`<div class="incoming">${spinner}<span>충전을 확인하고 있어요.</span></div>`:'')+
     actions(goButton('내 달란트로',balance>0?'home':'empty','secondary'));
 }

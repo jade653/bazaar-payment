@@ -23,12 +23,14 @@ jobs:
           node --check art.js
           node --check wallet.js
           node --check live.js
+          node --check operator-core.js
+          node --check operator.js
           node --test "tests/*.test.cjs"
       - uses: actions/configure-pages@v5
       - name: Prepare static files
         run: |
           mkdir -p _site
-          cp index.html styles.css app.js art.js wallet.js live.js _site/
+          cp index.html operator.html styles.css app.js art.js wallet.js live.js operator-core.js operator.js _site/
           cp -R assets _site/
           cp -R vendor _site/
       - uses: actions/upload-pages-artifact@v4

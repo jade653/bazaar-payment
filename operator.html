@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f7f8f4">
+  <title>달란트 지급</title>
+  <link rel="icon" href="assets/talent-mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <script src="wallet.js" defer></script>
+  <script src="operator-core.js" defer></script>
+  <script src="vendor/jsQR.min.js" defer></script>
+  <script src="operator.js" defer></script>
+</head>
+<body class="operator-body">
+  <main class="operator-app">
+    <header class="operator-header">
+      <div class="operator-brand"><img src="assets/talent-mark.svg" alt=""><div><strong>달란트 지급</strong><small>직원용</small></div></div>
+      <button id="balanceButton" class="operator-balance" type="button" hidden><span id="balanceText">— MST</span><small>잔액 새로고침</small></button>
+    </header>
+    <section id="operatorScreen" class="operator-screen" aria-live="polite"></section>
+  </main>
+  <div id="scanner" class="scanner" hidden>
+    <div class="scanner-bar"><strong>손님 QR을 비춰주세요</strong><button id="closeScanner" type="button" aria-label="스캐너 닫기">닫기</button></div>
+    <video id="scannerVideo" playsinline muted></video>
+    <div class="scanner-frame" aria-hidden="true"></div>
+    <p id="scannerMessage">QR이 사각형 안에 오도록 맞춰주세요.</p>
+    <canvas id="scannerCanvas" hidden></canvas>
+  </div>
+</body>
+</html>

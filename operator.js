@@ -179,7 +179,8 @@
     window.addEventListener('pagehide', () => { stopScanner(); controller?.dispose(); discovery?.dispose(); });
     if (!preview) {
       discovery = Wallet.discover(window);
-      controller = Wallet.createWallet({ getProvider: () => discovery.getProvider(), onState: onWallet });
+      const readBalanceFromRpc = Wallet.createRpcBalanceReader({ fetchImpl: window.fetch.bind(window) });
+      controller = Wallet.createWallet({ getProvider: () => discovery.getProvider(), onState: onWallet, readBalanceFromRpc });
       void controller.restore();
     }
     render();

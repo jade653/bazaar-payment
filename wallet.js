@@ -31,6 +31,24 @@
     return (n / divisor).toString() + (fraction ? '.' + fraction : '');
   }
   function failure(code) { return Object.assign(new Error(code), { code }); }
+  function createRpcBalanceReader({ fetchImpl, network = NETWORK, timeout = 8000 }) {
+    return async function readRpcBalance(account) {
+      if (!addressOK(account) || typeof fetchImpl !== 'function') throw failure('RPC_UNAVAILABLE');
+      const controller = typeof AbortController === 'function' ? new AbortController() : null;
+      const timer = controller ? setTimeout(() => controller.abort(), timeout) : null;
+      try {
+        const response = await fetchImpl(network.rpcUrls[0], {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_getBalance', params: [account, 'latest'] }),
+          ...(controller ? { signal: controller.signal } : {})
+        });
+        if (!response.ok) throw failure('RPC_HTTP_ERROR');
+        const body = await response.json();
+        if (body.error || typeof body.result !== 'string' || !/^0x[0-9a-f]+$/i.test(body.result)) throw failure('INVALID_BALANCE');
+        return body.result;
+      } finally { if (timer) clearTimeout(timer); }
+    };
+  }
 
   function discover(win) {
     let announced;
@@ -62,7 +80,7 @@
     };
   }
 
-  function createWallet({ getProvider, onState = () => {}, network = NETWORK, readTimeout = 12000 }) {
+  function createWallet({ getProvider, onState = () => {}, network = NETWORK, readTimeout = 12000, readBalanceFromRpc = null }) {
     let provider, activeTask, generation = 0, disposed = false, externalPending = false;
     let eventTimer, refreshTask, syncAgain = false;
     let state = { status: 'idle', account: null, balanceWei: null };
@@ -127,7 +145,14 @@
       const chain = await call('eth_chainId'); assertCurrent(revision);
       if (!sameChain(chain, network.chainId)) throw failure('WRONG_CHAIN');
       const account = accounts[0];
-      const raw = await call('eth_getBalance', [account, 'latest']); assertCurrent(revision);
+      let raw;
+      try { raw = await call('eth_getBalance', [account, 'latest']); }
+      catch (providerError) {
+        assertCurrent(revision);
+        if (!readBalanceFromRpc) throw providerError;
+        raw = await readBalanceFromRpc(account);
+      }
+      assertCurrent(revision);
       if (typeof raw !== 'string' || !/^0x[0-9a-f]+$/i.test(raw)) throw failure('INVALID_BALANCE');
       const [latestAccounts, latestChain] = await Promise.all([call('eth_accounts'), call('eth_chainId')]);
       assertCurrent(revision);
@@ -213,5 +238,5 @@
       dispose() { disposed = true; generation++; clearTimeout(eventTimer); unbind(); }
     };
   }
-  return { NETWORK, createWallet, discover, units, sameChain, errorCode };
+  return { NETWORK, createWallet, createRpcBalanceReader, discover, units, sameChain, errorCode };
 });

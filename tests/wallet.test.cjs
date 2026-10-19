@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {EventEmitter} = require('node:events');
-const {createWallet, NETWORK, units, discover} = require('../wallet.js');
+const {createWallet, createRpcBalanceReader, NETWORK, units, discover} = require('../wallet.js');
 const A = '0x' + '1'.repeat(40), B = '0x' + '2'.repeat(40);
 const wait = () => new Promise(resolve => setTimeout(resolve, 15));
 function deferred(){let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return{promise,resolve,reject};}
@@ -104,6 +104,25 @@ test('read timeouts permit retry without pretending the balance is zero',async t
   const p=new Provider();p.hooks.eth_getBalance=()=>new Promise(()=>{});
   const f=fixture(p,{readTimeout:5});t.after(()=>f.wallet.dispose());await f.wallet.setup();
   assert.equal(f.wallet.getSnapshot().code,'READ_TIMEOUT');assert.equal(f.wallet.getSnapshot().balanceWei,null);
+});
+test('provider balance failure falls back to the public RPC after wallet and chain verification',async t=>{
+  const p=new Provider();p.hooks.eth_getBalance=()=>Promise.reject(new Error('MetaMask RPC failed'));
+  const requests=[];
+  const readBalanceFromRpc=createRpcBalanceReader({fetchImpl:async(url,options)=>{
+    requests.push({url,body:JSON.parse(options.body)});
+    return{ok:true,json:async()=>({jsonrpc:'2.0',id:1,result:'0x2a'})};
+  }});
+  const f=fixture(p,{readBalanceFromRpc});t.after(()=>f.wallet.dispose());await f.wallet.setup();
+  assert.equal(f.wallet.getSnapshot().status,'ready');assert.equal(f.wallet.getSnapshot().balanceWei,'42');
+  assert.equal(requests[0].url,NETWORK.rpcUrls[0]);assert.deepEqual(requests[0].body.params,[A,'latest']);
+  assert.equal(f.methods().filter(x=>x==='eth_accounts').length,3);
+  assert.equal(f.methods().filter(x=>x==='eth_chainId').length,3);
+});
+test('invalid public RPC fallback never renders a fake zero balance',async t=>{
+  const p=new Provider();p.hooks.eth_getBalance=()=>Promise.reject(new Error('MetaMask RPC failed'));
+  const readBalanceFromRpc=createRpcBalanceReader({fetchImpl:async()=>({ok:true,json:async()=>({error:{code:-1}})})});
+  const f=fixture(p,{readBalanceFromRpc});t.after(()=>f.wallet.dispose());await f.wallet.setup();
+  assert.equal(f.wallet.getSnapshot().status,'error');assert.equal(f.wallet.getSnapshot().balanceWei,null);
 });
 test('account changed while balance loads discards the stale account response',async t=>{
   const p=new Provider(),oldBalance=deferred();const f=fixture(p);t.after(()=>f.wallet.dispose());await f.wallet.setup();

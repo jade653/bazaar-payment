@@ -36,10 +36,11 @@ function liveHarness() {
   function QRCode(_target, options) { qrOptions = options; }
   QRCode.CorrectLevel = { M: 0 };
   const Wallet = {
+    createRpcBalanceReader() { return async () => '0x0'; },
     discover() { return { getProvider() {}, dispose() {} }; },
     createWallet({ onState }) { walletState = onState; return { setup() {}, refresh() {}, restore() {}, dispose() {} }; },
   };
-  const window = { document, location, history, QRCode, addEventListener(type, handler) { listeners[type] = handler; } };
+  const window = { document, location, history, QRCode, fetch: async () => ({ ok: true, json: async () => ({ result: '0x0' }) }), addEventListener(type, handler) { listeners[type] = handler; } };
   const context = { window, document, location, history, QRCode, URL, navigator: {}, setTimeout, clearTimeout, Promise, console };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '..', 'live.js'), 'utf8'), context);
   window.BazaarLive.create({ Wallet, illustration: () => '' }).init();

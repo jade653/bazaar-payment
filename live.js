@@ -117,7 +117,8 @@
       document.querySelector('.app-footer').textContent = '우리 교회 바자회 · 결제 기능 준비 중';
       document.querySelector('.event-pill').hidden = true;
       discovery = Wallet.discover(window);
-      controller = Wallet.createWallet({ getProvider: () => discovery.getProvider(), onState });
+      const readBalanceFromRpc = Wallet.createRpcBalanceReader({ fetchImpl: window.fetch.bind(window) });
+      controller = Wallet.createWallet({ getProvider: () => discovery.getProvider(), onState, readBalanceFromRpc });
       screen.addEventListener('click', onClick);
       window.addEventListener('popstate', () => show(location.hash.slice(1), 'none'));
       const url = new URL(location.href), autoStart = url.searchParams.get('start') === '1';

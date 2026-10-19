@@ -66,7 +66,7 @@ function prepareScreen(){
 function balanceScreen(){
   const failed=currentId==='balance-error';
   return title('내 달란트')+`<div class="balance-panel"><div class="balance-caption">사용 가능한 금액</div><div class="balance-number">${failed?'—':format(balance)}${failed?'':'<span>달란트</span>'}</div><div class="balance-krw">${failed?'잔액을 확인하지 못했어요.':format(balance*1000)+'원 상당'}</div></div>`+
-    (failed?actions(action('다시 확인','primary','data-action="retry-balance"')):actions(balance>0?goButton('결제하기','pay'):'',goButton('충전하기','receive',balance>0?'secondary':'primary')));
+    (failed?actions(action('다시 확인','primary','data-action="retry-balance"')):actions(goButton('충전하기','receive'),goButton('매장 결제하기','pay','secondary')));
 }
 
 function receiveScreen(){

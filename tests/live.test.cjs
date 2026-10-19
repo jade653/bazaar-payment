@@ -12,7 +12,8 @@ function liveHarness() {
   const qrNode = {};
   const footer = {};
   const pill = {};
-  const location = { href: 'https://bazaar.mustree.kr/#welcome', hash: '#welcome', assign() {} };
+  const assigned = [];
+  const location = { href: 'https://bazaar.mustree.kr/#welcome', hash: '#welcome', assign(value) { assigned.push(String(value)); } };
   const historyCalls = [];
   let backCount = 0;
   const setLocation = value => {
@@ -45,7 +46,7 @@ function liveHarness() {
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '..', 'live.js'), 'utf8'), context);
   window.BazaarLive.create({ Wallet, illustration: () => '' }).init();
   const click = action => listeners.click({ target: { closest: () => ({ disabled: false, dataset: { live: action } }) } });
-  return { screen, location, historyCalls, listeners, click, state: value => walletState(value), qr: () => qrOptions, backCount: () => backCount };
+  return { screen, location, historyCalls, listeners, click, state: value => walletState(value), qr: () => qrOptions, backCount: () => backCount, assigned };
 }
 
 test('top-up opens a locally generated address QR and survives balance refresh races', () => {
@@ -78,4 +79,17 @@ test('top-up participates in browser history and returns home on Back', () => {
   app.listeners.popstate();
   assert.match(app.screen.innerHTML, /내 달란트/);
   assert.doesNotMatch(app.screen.innerHTML, /현금 결제 후 직원에게/);
+});
+
+test('MetaMask handoff uses a simple start path and store payment opens its scanner', () => {
+  const handoff = liveHarness();
+  handoff.click('start');
+  handoff.state({ status: 'unavailable' });
+  assert.equal(handoff.assigned.at(-1), 'https://link.metamask.io/dapp/bazaar.mustree.kr/start.html');
+
+  const payment = liveHarness();
+  payment.state({ status: 'ready', account: '0x3333333333333333333333333333333333333333', balanceWei: '1000000000000000000' });
+  assert.match(payment.screen.innerHTML, /매장 결제하기/);
+  payment.click('pay');
+  assert.equal(payment.assigned.at(-1), '/pay.html?scan=1');
 });

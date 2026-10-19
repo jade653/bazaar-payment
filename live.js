@@ -27,7 +27,7 @@
       if (view === 'home' || view === 'balance-error') {
         const failed = view === 'balance-error';
         const krw = balanceWei === null ? '—' : (BigInt(balanceWei) * 1000n / (10n ** 18n)).toLocaleString('ko-KR');
-        return heading('내 달란트') + `<div class="balance-panel"><div class="balance-caption">사용 가능한 금액</div><div class="balance-number">${failed ? '—' : balanceText()}${failed ? '' : '<span>달란트</span>'}</div><div class="balance-krw">${failed ? '잔액을 확인하지 못했어요.' : krw + '원 상당'}</div></div>` + (failed ? actions(button('다시 확인', 'refresh')) : actions(button('충전하기', 'receive'), button('잔액 새로고침', 'refresh', true), '<p class="note">결제 기능은 준비 중이에요.</p>'));
+        return heading('내 달란트') + `<div class="balance-panel"><div class="balance-caption">사용 가능한 금액</div><div class="balance-number">${failed ? '—' : balanceText()}${failed ? '' : '<span>달란트</span>'}</div><div class="balance-krw">${failed ? '잔액을 확인하지 못했어요.' : krw + '원 상당'}</div></div>` + (failed ? actions(button('다시 확인', 'refresh')) : actions(button('충전하기', 'receive'), button('매장 결제하기', 'pay', true)));
       }
       if (view === 'receive') return heading('현금 결제 후 직원에게<br>이 QR을 보여주세요.') + `<div id="liveQr" class="live-qr" role="img" aria-label="내 지갑 주소 QR 코드"></div><div class="live-address"><code>${account || ''}</code></div>` + actions(button('주소 복사하기', 'copy'), button('내 달란트로', 'home', true));
       return heading('달란트로<br>즐거운 바자회.', '충전하고 간편하게 사용하세요.') + illustration('coin') + actions(button('시작하기', 'start'), button('앱 설치하기', 'install', true));
@@ -80,13 +80,8 @@
       phase = 'connect'; retryVisible = true; show('connect');
     }
     function openApp() {
-      const destination = new URL(location.href);
-      destination.searchParams.delete('preview'); destination.searchParams.set('start', '1'); destination.hash = 'connect';
-      if (['localhost', '127.0.0.1', '[::1]'].includes(destination.hostname)) {
-        destination.protocol = 'https:'; destination.host = 'bazaar.mustree.kr'; destination.port = ''; destination.pathname = '/';
-      }
       show('opening');
-      location.assign('https://link.metamask.io/dapp/' + destination.host + destination.pathname + destination.search + destination.hash);
+      location.assign('https://link.metamask.io/dapp/bazaar.mustree.kr/start.html');
     }
     function start() {
       intent = true; allowAppOpen = true;
@@ -107,6 +102,7 @@
           else show('home', 'push');
           break;
         case 'receive': if (account) show('receive', 'push'); break;
+        case 'pay': if (account) location.assign('/pay.html?scan=1'); break;
         case 'refresh': void controller.refresh(); break;
         case 'copy':
           if (account && navigator.clipboard) navigator.clipboard.writeText(account).then(() => { target.textContent = '복사했어요'; }).catch(() => { target.textContent = '주소를 길게 눌러 복사해 주세요'; });

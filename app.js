@@ -9,9 +9,8 @@ const mainStates = [
   {id:'connect',title:'03 준비 중',description:'기존 5~7번을 같은 화면으로 통합했습니다. 진입 즉시 요청 대기, Confirm만 누르면 다음 단계로 이어집니다.'},
   {id:'home',title:'04 내 달란트',description:'잔액과 충전·결제만 표시합니다.'},
   {id:'receive',title:'05 충전',description:'직원에게 QR을 보여줍니다. 수령하면 잔액으로 돌아갑니다.'},
-  {id:'store-scan',title:'06 매장 QR',description:'매장 결제하기를 누르면 매장 QR을 스캔합니다.'},
-  {id:'pay-manual',title:'07 결제',description:'QR에서 읽은 매장 주소를 채우고 결제 금액을 입력합니다.'},
-  {id:'payment-success',title:'08 완료',description:'거래 성공을 확인한 다음에만 완료 화면을 표시합니다.'},
+  {id:'pay-manual',title:'06 결제',description:'매장 주소가 없으면 같은 화면에서 QR을 촬영하고 결제 금액을 입력합니다.'},
+  {id:'payment-success',title:'07 완료',description:'거래 성공을 확인한 다음에만 완료 화면을 표시합니다.'},
 ];
 const extraStates = [
   {id:'network-add',title:'추가 승인 대기',description:'준비 화면에서 네트워크 추가 요청을 보낸 상황.'},
@@ -48,6 +47,7 @@ let requestTimer;
 let progressTimer;
 let paymentCompleted=false;
 let chargeCompleted=false;
+let merchantReady=false;
 const points=()=>amount/1000;
 const action=(label,kind='primary',data='')=>`<button type="button" class="${kind}" ${data}>${label}</button>`;
 const goButton=(label,id,kind='primary')=>action(label,kind,`data-go="${id}"`);
@@ -66,19 +66,13 @@ function prepareScreen(){
 function balanceScreen(){
   const failed=currentId==='balance-error';
   return title('내 달란트')+`<div class="balance-panel"><div class="balance-caption">사용 가능한 금액</div><div class="balance-number">${failed?'—':format(balance)}${failed?'':'<span>달란트</span>'}</div><div class="balance-krw">${failed?'잔액을 확인하지 못했어요.':format(balance*1000)+'원 상당'}</div></div>`+
-    (failed?actions(action('다시 확인','primary','data-action="retry-balance"')):actions(goButton('충전하기','receive'),goButton('매장 결제하기','store-scan','secondary')));
+    (failed?actions(action('다시 확인','primary','data-action="retry-balance"')):actions(goButton('충전하기','receive'),goButton('매장 결제하기','pay-manual','secondary')));
 }
 
 function receiveScreen(){
   return title('현금 결제 후 직원에게<br>이 QR을 보여주세요.')+sampleQR()+
     (currentId==='topup-waiting'?`<div class="incoming">${spinner}<span>충전을 확인하고 있어요.</span></div>`:'')+
     actions(goButton('내 달란트로',balance>0?'home':'empty','secondary'));
-}
-
-function storeScanScreen(){
-  return title('매장 QR을<br>스캔해 주세요.')+
-    `<div class="scan-card preview-scan-card"><img src="assets/talent-mark.svg" alt=""><p>결제할 매장의 QR을<br>카메라로 인식합니다.</p>${action('QR 인식 테스트','primary','data-action="scan-store"')}<button type="button" class="secondary" data-action="scan-store">QR 이미지 선택</button></div>`+
-    actions(goButton('내 달란트로','home','plain-button'));
 }
 
 function paymentScreen(){
@@ -88,7 +82,7 @@ function paymentScreen(){
   const busy=waiting||pending||unknown;
   const manual=currentId==='pay-manual'||currentId==='pay'||currentId==='payment-cancelled'||currentId==='payment-failed';
   let content=title(pending||unknown?'결제를 확인하고 있어요.':waiting?'확인을 눌러주세요.':'얼마를 결제할까요?',waiting?'MetaMask에서 확인해 주세요.':'')+
-    `<div class="recipient-card preview-recipient"><small>받는 매장 주소</small><strong>0x222222…222222</strong><code>${demoMerchant}</code></div>`+
+    (merchantReady?`<div class="recipient-card preview-recipient"><small>받는 매장 주소</small><strong>0x222222…222222</strong><code>${demoMerchant}</code></div>`:`<div class="recipient-card preview-recipient recipient-empty"><small>받는 매장 주소</small><button type="button" class="recipient-scan-button" data-action="scan-store">매장 QR 촬영</button></div>`)+
     (manual?`<label class="amount-label" for="amountInput">결제 금액</label><div class="amount-input-wrap"><input id="amountInput" type="number" inputmode="numeric" min="1" step="1" placeholder="0" value="${amount||''}"><span>원</span></div>`:`<div class="payment-amount">${format(amount)}<span>원</span></div>`)+
     `<div class="payment-details">${line('사용할 달란트',`<span id="pointAmount">${format(points())}</span> 달란트`)}${line('내 잔액',format(balance)+' 달란트')}</div>`;
   if(busy){
@@ -101,14 +95,13 @@ function paymentScreen(){
   if(currentId==='insufficient')return content+'<p class="inline-status">달란트가 부족해요.</p>'+actions(action('충전하기','primary','data-action="topup-payment"'),goButton('돌아가기','home','plain-button'));
   if(currentId==='payment-cancelled')content+='<p class="inline-status">결제를 취소했어요.</p>';
   if(currentId==='payment-failed')content+='<p class="inline-status">결제하지 못했어요. 다시 시도해 주세요.</p>';
-  return content+actions(action(amount?format(amount)+'원 결제하기':'금액을 입력해 주세요.','primary',`id="payButton" data-action="pay" ${amount?'':'disabled'}`),goButton('돌아가기','home','plain-button'));
+  return content+actions(action(amount&&merchantReady?format(amount)+'원 결제하기':!merchantReady?'매장 QR을 촬영해 주세요.':'금액을 입력해 주세요.','primary',`id="payButton" data-action="pay" ${amount&&merchantReady?'':'disabled'}`),goButton('돌아가기','home','plain-button'));
 }
 
 function renderScreen(){
   if(phaseStates.includes(currentId)||['setup-cancelled','connection-error'].includes(currentId))return prepareScreen();
   if(['home','empty','balance-error'].includes(currentId))return balanceScreen();
   if(['receive','topup-waiting'].includes(currentId))return receiveScreen();
-  if(currentId==='store-scan')return storeScanScreen();
   if(paymentStates.includes(currentId))return paymentScreen();
   if(currentId==='opening')return `<div class="center-state">${illustration('phone')}${title('앱으로 이동할게요.','화면이 바뀌지 않으면 눌러주세요.')}</div>`+actions(goButton('눌러서 이동','connect'),goButton('앱 설치하기','welcome','plain-button'));
   if(currentId==='payment-success')return `<div class="center-state">${illustration('check')}${title('결제했어요!')}</div><div class="simple-receipt"><strong>${format(amount)}원</strong><span>${format(points())} MST 결제</span><small>0x222222…222222 · 예시 거래</small></div>`+actions(action('내 달란트로','primary','data-action="finish-payment"'));
@@ -174,6 +167,7 @@ function finishPayment(){
 }
 function selectState(id){
   amount=5000;balance=id==='empty'?0:id==='insufficient'?3:11;
+  merchantReady=id!=='pay-manual';
   paymentIntent=false;paymentCompleted=false;chargeCompleted=false;go(id);
 }
 function nextFlow(){
@@ -181,7 +175,6 @@ function nextFlow(){
     case'welcome':go('opening');break;
     case'opening':go('connect');break;
     case'home':case'empty':go('receive');break;
-    case'store-scan':go('pay-manual');break;
     case'receive':go('topup-waiting');break;
     case'topup-waiting':if(!chargeCompleted){balance+=11;chargeCompleted=true;}go(paymentIntent?'pay':'home');break;
     case'payment-pending':case'payment-unknown':go('payment-success');break;
@@ -191,7 +184,7 @@ function nextFlow(){
   }
 }
 function requestPayment(){
-  if(!Number.isSafeInteger(amount)||amount<=0)return;
+  if(!merchantReady||!Number.isSafeInteger(amount)||amount<=0)return;
   if(currentId==='payment-prepare'){paymentIntent=true;go('connect');return;}
   if(currentId==='payment-unknown'){go('payment-pending');return;}
   if(points()>=balance){go('insufficient');return;}
@@ -210,11 +203,11 @@ document.addEventListener('click',event=>{
   if(!preview)return;
   const b=event.target.closest('button');if(!b||b.disabled)return;
   if(b.dataset.state){selectState(b.dataset.state);return;}
-  if(b.dataset.go){go(b.dataset.go);return;}
+  if(b.dataset.go){if(b.dataset.go==='pay-manual')merchantReady=false;go(b.dataset.go);return;}
   switch(b.dataset.action){
     case'retry-prepare':case'retry-payment':retry();break;
     case'retry-balance':queryBalance();break;
-    case'scan-store':go('pay-manual');break;
+    case'scan-store':merchantReady=true;paint();break;
     case'pay':requestPayment();break;
     case'prepare-payment':paymentIntent=true;go('connect');break;
     case'topup-payment':paymentIntent=true;chargeCompleted=false;go('receive');break;

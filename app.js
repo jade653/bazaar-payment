@@ -55,7 +55,7 @@ const actions=(...items)=>`<div class="actions">${items.join('')}</div>`;
 const title=(text,description='')=>`<h1 class="screen-title">${text}</h1>${description?`<p class="screen-description">${description}</p>`:''}`;
 const spinner='<span class="spinner" aria-hidden="true"></span>';
 const line=(label,value)=>`<div class="detail-row"><span>${label}</span><strong>${value}</strong></div>`;
-const merchant='<div class="merchant"><div class="merchant-icon" aria-hidden="true">✳</div><strong>사랑의 먹거리 부스</strong></div>';
+const merchant='<div class="merchant"><img class="merchant-icon" src="assets/talent-mark.svg" alt=""><strong>사랑의 먹거리 부스</strong></div>';
 
 function prepareScreen(){
   const loading=phase==='query';
@@ -122,7 +122,7 @@ function updateLab(){
   document.getElementById('approvalControls').hidden=!approval;
   document.getElementById('approveDemo').disabled=!requestPending;
   document.getElementById('continueFlow').hidden=approval;
-  document.getElementById('continueFlow').textContent=currentId==='topup-waiting'?'충전 완료로 보기 →':'다음 단계로 보기 →';
+  document.getElementById('continueFlow').textContent=currentId==='topup-waiting'?'충전 완료로 보기':'다음 단계로 보기';
   // Request phase is visible only in the developer panel, never in participant copy.
   if(approval)document.getElementById('stateDescription').textContent=state.description+' 현재 요청: '+(currentId==='payment-approval'?'결제':phase==='connect'?'계정 연결':phase==='network-switch'?'네트워크 전환':'네트워크 추가');
 }

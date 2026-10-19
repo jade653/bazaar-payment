@@ -13,3 +13,13 @@ body:not(.is-preview){background:white}body:not(.is-preview) .workspace{display:
 @media(max-width:640px){.test-options{display:none}.is-preview .device{min-height:640px}.is-preview .inspector{padding:0 8px}.is-preview .app-screen{padding-bottom:25px}}
 
 .live-address code{display:block;overflow-wrap:anywhere;user-select:all;font-size:13px;line-height:1.9;color:#365e48}.live-address{margin-top:35px;padding:24px}
+
+/* Image-backed UI icons render identically across operating systems. */
+.brand-mark{display:block;width:41px;height:41px;flex:0 0 auto;background:none;border-radius:0;font-size:0}
+.brand-mark.small{width:29px;height:29px;border-radius:0;font-size:0}
+.ui-icon{display:inline-block;width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;vertical-align:middle;flex:0 0 auto}
+.text-button{display:inline-flex;align-items:center;gap:7px}.text-button .ui-icon{width:17px;height:17px}
+.step-controls button{display:grid;place-items:center;padding:0}.step-controls .ui-icon{width:18px;height:18px}
+.merchant-icon{display:block;width:47px;height:47px;flex:0 0 auto;background:none;border-radius:0}
+.balance-panel:after{content:"";width:170px;height:170px;right:-29px;bottom:-53px;background:url("assets/talent-mark.svg") center/contain no-repeat;opacity:.09;transform:rotate(12deg)}
+@media(max-width:640px){.brand-mark{width:33px;height:33px;border-radius:0;font-size:0}.brand-mark.small{width:29px;height:29px}}

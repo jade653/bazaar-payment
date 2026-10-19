@@ -9,8 +9,9 @@ const mainStates = [
   {id:'connect',title:'03 준비 중',description:'기존 5~7번을 같은 화면으로 통합했습니다. 진입 즉시 요청 대기, Confirm만 누르면 다음 단계로 이어집니다.'},
   {id:'home',title:'04 내 달란트',description:'잔액과 충전·결제만 표시합니다.'},
   {id:'receive',title:'05 충전',description:'직원에게 QR을 보여줍니다. 수령하면 잔액으로 돌아갑니다.'},
-  {id:'pay',title:'06 결제',description:'받는 곳과 금액만 확인합니다. 승인·처리 중도 같은 화면입니다.'},
-  {id:'payment-success',title:'07 완료',description:'성공을 확인한 다음에만 완료 화면을 표시합니다.'},
+  {id:'store-scan',title:'06 매장 QR',description:'매장 결제하기를 누르면 매장 QR을 스캔합니다.'},
+  {id:'pay-manual',title:'07 결제',description:'QR에서 읽은 매장 주소를 채우고 결제 금액을 입력합니다.'},
+  {id:'payment-success',title:'08 완료',description:'거래 성공을 확인한 다음에만 완료 화면을 표시합니다.'},
 ];
 const extraStates = [
   {id:'network-add',title:'추가 승인 대기',description:'준비 화면에서 네트워크 추가 요청을 보낸 상황.'},
@@ -20,7 +21,6 @@ const extraStates = [
   {id:'empty',title:'잔액 0',description:'잔액 화면에서 충전 버튼을 강조합니다.'},
   {id:'balance-error',title:'잔액 조회 실패',description:'잔액을 0으로 표시하지 않고 같은 화면에서 재시도합니다.'},
   {id:'topup-waiting',title:'충전 대기',description:'충전 화면에서 수령을 기다립니다.'},
-  {id:'pay-manual',title:'금액 입력',description:'금액 없는 부스 QR을 읽은 상황입니다.'},
   {id:'payment-prepare',title:'결제 전 준비 필요',description:'부스·금액을 유지한 채 준비 후 결제 화면으로 돌아옵니다.'},
   {id:'insufficient',title:'잔액 부족',description:'결제 화면 안에서 충전 안내를 표시합니다.'},
   {id:'payment-approval',title:'결제 승인 대기',description:'결제 요청 후 사용자는 MetaMask Confirm만 누릅니다.'},
@@ -55,7 +55,7 @@ const actions=(...items)=>`<div class="actions">${items.join('')}</div>`;
 const title=(text,description='')=>`<h1 class="screen-title">${text}</h1>${description?`<p class="screen-description">${description}</p>`:''}`;
 const spinner='<span class="spinner" aria-hidden="true"></span>';
 const line=(label,value)=>`<div class="detail-row"><span>${label}</span><strong>${value}</strong></div>`;
-const merchant='<div class="merchant"><img class="merchant-icon" src="assets/talent-mark.svg" alt=""><strong>사랑의 먹거리 부스</strong></div>';
+const demoMerchant='0x2222222222222222222222222222222222222222';
 
 function prepareScreen(){
   const loading=phase==='query';
@@ -66,7 +66,7 @@ function prepareScreen(){
 function balanceScreen(){
   const failed=currentId==='balance-error';
   return title('내 달란트')+`<div class="balance-panel"><div class="balance-caption">사용 가능한 금액</div><div class="balance-number">${failed?'—':format(balance)}${failed?'':'<span>달란트</span>'}</div><div class="balance-krw">${failed?'잔액을 확인하지 못했어요.':format(balance*1000)+'원 상당'}</div></div>`+
-    (failed?actions(action('다시 확인','primary','data-action="retry-balance"')):actions(goButton('충전하기','receive'),goButton('매장 결제하기','pay','secondary')));
+    (failed?actions(action('다시 확인','primary','data-action="retry-balance"')):actions(goButton('충전하기','receive'),goButton('매장 결제하기','store-scan','secondary')));
 }
 
 function receiveScreen(){
@@ -75,13 +75,20 @@ function receiveScreen(){
     actions(goButton('내 달란트로',balance>0?'home':'empty','secondary'));
 }
 
+function storeScanScreen(){
+  return title('매장 QR을<br>스캔해 주세요.')+
+    `<div class="scan-card preview-scan-card"><img src="assets/talent-mark.svg" alt=""><p>결제할 매장의 QR을<br>카메라로 인식합니다.</p>${action('QR 인식 테스트','primary','data-action="scan-store"')}<button type="button" class="secondary" data-action="scan-store">QR 이미지 선택</button></div>`+
+    actions(goButton('내 달란트로','home','plain-button'));
+}
+
 function paymentScreen(){
   const waiting=currentId==='payment-approval';
   const pending=currentId==='payment-pending';
   const unknown=currentId==='payment-unknown';
   const busy=waiting||pending||unknown;
-  const manual=currentId==='pay-manual';
-  let content=title(pending||unknown?'결제를 확인하고 있어요.':waiting?'확인을 눌러주세요.':'얼마를 결제할까요?',waiting?'MetaMask에서 확인해 주세요.':'')+merchant()+
+  const manual=currentId==='pay-manual'||currentId==='pay'||currentId==='payment-cancelled'||currentId==='payment-failed';
+  let content=title(pending||unknown?'결제를 확인하고 있어요.':waiting?'확인을 눌러주세요.':'얼마를 결제할까요?',waiting?'MetaMask에서 확인해 주세요.':'')+
+    `<div class="recipient-card preview-recipient"><small>받는 매장 주소</small><strong>0x222222…222222</strong><code>${demoMerchant}</code></div>`+
     (manual?`<label class="amount-label" for="amountInput">결제 금액</label><div class="amount-input-wrap"><input id="amountInput" type="number" inputmode="numeric" min="1" step="1" placeholder="0" value="${amount||''}"><span>원</span></div>`:`<div class="payment-amount">${format(amount)}<span>원</span></div>`)+
     `<div class="payment-details">${line('사용할 달란트',`<span id="pointAmount">${format(points())}</span> 달란트`)}${line('내 잔액',format(balance)+' 달란트')}</div>`;
   if(busy){
@@ -101,9 +108,10 @@ function renderScreen(){
   if(phaseStates.includes(currentId)||['setup-cancelled','connection-error'].includes(currentId))return prepareScreen();
   if(['home','empty','balance-error'].includes(currentId))return balanceScreen();
   if(['receive','topup-waiting'].includes(currentId))return receiveScreen();
+  if(currentId==='store-scan')return storeScanScreen();
   if(paymentStates.includes(currentId))return paymentScreen();
   if(currentId==='opening')return `<div class="center-state">${illustration('phone')}${title('앱으로 이동할게요.','화면이 바뀌지 않으면 눌러주세요.')}</div>`+actions(goButton('눌러서 이동','connect'),goButton('앱 설치하기','welcome','plain-button'));
-  if(currentId==='payment-success')return `<div class="center-state">${illustration('check')}${title('결제했어요!','직원에게 이 화면을 보여주세요.')}</div><div class="simple-receipt"><strong>${format(amount)}원</strong><span>사랑의 먹거리 부스</span><small>예시 결제 · PREVIEW-001</small></div>`+actions(action('내 달란트로','primary','data-action="finish-payment"'));
+  if(currentId==='payment-success')return `<div class="center-state">${illustration('check')}${title('결제했어요!')}</div><div class="simple-receipt"><strong>${format(amount)}원</strong><span>${format(points())} MST 결제</span><small>0x222222…222222 · 예시 거래</small></div>`+actions(action('내 달란트로','primary','data-action="finish-payment"'));
   return title('달란트로<br>즐거운 바자회.', '충전하고 간편하게 사용하세요.')+illustration('coin')+actions(goButton('설치하고 시작하기','opening'),goButton('이미 설치했어요 · 시작하기','opening','plain-button'));
 }
 
@@ -173,6 +181,7 @@ function nextFlow(){
     case'welcome':go('opening');break;
     case'opening':go('connect');break;
     case'home':case'empty':go('receive');break;
+    case'store-scan':go('pay-manual');break;
     case'receive':go('topup-waiting');break;
     case'topup-waiting':if(!chargeCompleted){balance+=11;chargeCompleted=true;}go(paymentIntent?'pay':'home');break;
     case'payment-pending':case'payment-unknown':go('payment-success');break;
@@ -205,6 +214,7 @@ document.addEventListener('click',event=>{
   switch(b.dataset.action){
     case'retry-prepare':case'retry-payment':retry();break;
     case'retry-balance':queryBalance();break;
+    case'scan-store':go('pay-manual');break;
     case'pay':requestPayment();break;
     case'prepare-payment':paymentIntent=true;go('connect');break;
     case'topup-payment':paymentIntent=true;chargeCompleted=false;go('receive');break;

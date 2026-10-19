@@ -41,10 +41,11 @@ function liveHarness() {
     discover() { return { getProvider() {}, dispose() {} }; },
     createWallet({ onState }) { walletState = onState; return { setup() {}, refresh() {}, restore() {}, dispose() {} }; },
   };
+  const Store = { recentTransfers: async () => [] };
   const window = { document, location, history, QRCode, fetch: async () => ({ ok: true, json: async () => ({ result: '0x0' }) }), addEventListener(type, handler) { listeners[type] = handler; } };
   const context = { window, document, location, history, QRCode, URL, navigator: {}, setTimeout, clearTimeout, Promise, console };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '..', 'live.js'), 'utf8'), context);
-  window.BazaarLive.create({ Wallet, illustration: () => '' }).init();
+  window.BazaarLive.create({ Wallet, Store, illustration: () => '' }).init();
   const click = action => listeners.click({ target: { closest: () => ({ disabled: false, dataset: { live: action } }) } });
   return { screen, location, historyCalls, listeners, click, state: value => walletState(value), qr: () => qrOptions, backCount: () => backCount, assigned };
 }
@@ -77,8 +78,21 @@ test('top-up participates in browser history and returns home on Back', () => {
   app.location.hash = '#home';
   app.location.href = 'https://bazaar.mustree.kr/#home';
   app.listeners.popstate();
-  assert.match(app.screen.innerHTML, /내 달란트/);
+  assert.match(app.screen.innerHTML, /내 지갑/);
   assert.doesNotMatch(app.screen.innerHTML, /현금 결제 후 직원에게/);
+});
+
+test('hides the gas reserve while preserving spendable MST precision', () => {
+  const app = liveHarness();
+  const address = '0x2222222222222222222222222222222222222222';
+  app.state({ status: 'ready', account: address, balanceWei: '1999999999995506000' });
+  assert.match(app.screen.innerHTML, /2<span>MST/);
+  assert.match(app.screen.innerHTML, /2,000원 상당/);
+  app.state({ status: 'ready', account: address, balanceWei: '50000000' });
+  assert.match(app.screen.innerHTML, /0<span>MST/);
+  assert.match(app.screen.innerHTML, /0원 상당/);
+  app.state({ status: 'ready', account: address, balanceWei: '5500000050000000000' });
+  assert.match(app.screen.innerHTML, /5\.5<span>MST/);
 });
 
 test('MetaMask handoff uses a simple start path and store payment opens its scanner', () => {
@@ -89,7 +103,7 @@ test('MetaMask handoff uses a simple start path and store payment opens its scan
 
   const payment = liveHarness();
   payment.state({ status: 'ready', account: '0x3333333333333333333333333333333333333333', balanceWei: '1000000000000000000' });
-  assert.match(payment.screen.innerHTML, /매장 결제하기/);
+  assert.match(payment.screen.innerHTML, /가게 결제하기/);
   payment.click('pay');
   assert.equal(payment.assigned.at(-1), '/pay.html?scan=1');
 });

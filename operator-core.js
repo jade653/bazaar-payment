@@ -10,6 +10,7 @@
   const WON_PER_MST = 1000n;
   const WEI_PER_MST = 10n ** 18n;
   const BONUS_PERCENT = 10n;
+  const TARGET_GAS_RESERVE_WEI = 50_000_000n;
 
   function failure(code, message = code) {
     return Object.assign(new Error(message), { code });
@@ -39,22 +40,31 @@
   function sameChain(a, b) {
     try { return BigInt(a) === BigInt(b); } catch { return false; }
   }
+  function gasTopUpFor(balanceWei) {
+    let balance;
+    try { balance = BigInt(balanceWei); } catch { throw failure('INVALID_BALANCE'); }
+    const fractionalWei = ((balance % WEI_PER_MST) + WEI_PER_MST) % WEI_PER_MST;
+    return fractionalWei >= TARGET_GAS_RESERVE_WEI ? 0n : TARGET_GAS_RESERVE_WEI - fractionalWei;
+  }
   async function prepareTransaction(provider, { account, recipient, won, chainId }) {
     const to = parseAddress(recipient);
     if (!to) throw failure('INVALID_ADDRESS');
     if (!ADDRESS.test(account || '')) throw failure('NO_ACCOUNT');
     const amount = amountFromWon(won);
-    const [accounts, activeChain, balanceHex] = await Promise.all([
+    const [accounts, activeChain, balanceHex, recipientBalanceHex] = await Promise.all([
       provider.request({ method: 'eth_accounts' }),
       provider.request({ method: 'eth_chainId' }),
-      provider.request({ method: 'eth_getBalance', params: [account, 'latest'] })
+      provider.request({ method: 'eth_getBalance', params: [account, 'latest'] }),
+      provider.request({ method: 'eth_getBalance', params: [to, 'latest'] })
     ]);
     if (!ADDRESS.test(accounts?.[0] || '') || accounts[0].toLowerCase() !== account.toLowerCase()) throw failure('ACCOUNT_CHANGED');
     if (!sameChain(activeChain, chainId)) throw failure('WRONG_CHAIN');
     let balance;
     try { balance = BigInt(balanceHex); } catch { throw failure('INVALID_BALANCE'); }
-    if (balance <= amount.wei) throw failure('INSUFFICIENT_BALANCE');
-    return { amount, transaction: { from: account, to, value: amount.valueHex } };
+    const gasTopUpWei = gasTopUpFor(recipientBalanceHex);
+    const payoutWei = amount.wei + gasTopUpWei;
+    if (balance <= payoutWei) throw failure('INSUFFICIENT_BALANCE');
+    return { amount, gasTopUpWei, payoutWei, transaction: { from: account, to, value: '0x' + payoutWei.toString(16) } };
   }
   function createSender({ provider, chainId, pollInterval = 1800, maxPolls = 70, wait = ms => new Promise(resolve => setTimeout(resolve, ms)) }) {
     let active = null;
@@ -82,5 +92,5 @@
     }
     return { send, waitForReceipt, isSending: () => Boolean(active) };
   }
-  return { parseAddress, parseWon, amountFromWon, prepareTransaction, createSender, WON_PER_MST, WEI_PER_MST, BONUS_PERCENT };
+  return { parseAddress, parseWon, amountFromWon, gasTopUpFor, prepareTransaction, createSender, WON_PER_MST, WEI_PER_MST, BONUS_PERCENT, TARGET_GAS_RESERVE_WEI };
 });

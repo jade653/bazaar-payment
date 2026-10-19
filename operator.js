@@ -10,11 +10,11 @@
   const canvas = document.getElementById('scannerCanvas');
   const scannerMessage = document.getElementById('scannerMessage');
   const preview = new URL(location.href).searchParams.get('preview') === '1';
-  const SAMPLE_RECIPIENT = '0x1111111111111111111111111111111111111111';
   let discovery, controller, provider, sender, stream, frame;
-  let state = { step: 'connect', account: null, balanceWei: null, recipient: null, won: '', status: '', tx: null };
+  let state = { step: 'connect', account: null, balanceWei: null, recipient: null, won: '', status: '', tx: null, manualOpen: false, manualAddress: '' };
 
   const short = value => value ? `${value.slice(0, 8)}…${value.slice(-6)}` : '';
+  const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
   const button = (label, action, className = 'operator-primary', disabled = false) => `<button class="${className}" type="button" data-action="${action}"${disabled ? ' disabled' : ''}>${label}</button>`;
   function formattedBalance() {
     if (state.balanceWei === null) return '— MST';
@@ -35,29 +35,30 @@
     balanceButton.hidden = !state.account;
     balanceText.textContent = formattedBalance();
     if (state.step === 'connect') {
-      screen.innerHTML = `<div class="operator-hero"><span class="operator-kicker">STAFF ONLY</span><h1>달란트를<br>지급해 주세요.</h1><p>지급용 MetaMask를 연결하면 바로 시작할 수 있어요.</p></div>${state.status ? `<p class="operator-alert">${state.status}</p>` : ''}${button('지급 지갑 연결하기', 'connect')}`;
-      return;
-    }
-    if (state.step === 'scan') {
-      screen.innerHTML = `<div class="operator-title"><span>01</span><h1>손님 QR을<br>스캔해 주세요.</h1></div><div class="scan-card"><img src="assets/talent-mark.svg" alt=""><p>손님의 충전 화면에 있는<br>QR을 인식합니다.</p>${button('카메라로 스캔', 'scan')}<label class="operator-secondary file-button">QR 이미지 선택<input id="qrFile" type="file" accept="image/*" hidden></label></div><div class="manual-entry"><label for="manualAddress">카메라가 안 되나요?</label><div><input id="manualAddress" type="text" inputmode="text" placeholder="지갑 주소 붙여넣기" autocomplete="off"><button type="button" data-action="manual">확인</button></div></div>${state.status ? `<p class="operator-alert">${state.status}</p>` : ''}`;
+      screen.innerHTML = `<div class="operator-hero"><span class="operator-kicker">STAFF ONLY</span><h1>MST를<br>지급해 주세요.</h1><p>지급용 MetaMask를 연결하면 바로 시작할 수 있어요.</p></div>${state.status ? `<p class="operator-alert">${state.status}</p>` : ''}${button('지급 지갑 연결하기', 'connect')}`;
       return;
     }
     if (state.step === 'amount') {
       let amount = null;
       try { amount = Core.amountFromWon(state.won); } catch {}
-      screen.innerHTML = `<button class="operator-back" type="button" data-action="back">← 다시 스캔</button><div class="operator-title"><span>02</span><h1>받은 현금을<br>입력해 주세요.</h1></div><div class="recipient-card"><small>받는 손님</small><strong>${short(state.recipient)}</strong><code>${state.recipient}</code></div><div class="preset-grid">${[5000,10000,30000,50000].map(v => `<button type="button" data-won="${v}">${v.toLocaleString('ko-KR')}원</button>`).join('')}</div><label class="amount-input"><span>현금 금액</span><div><input id="wonInput" type="text" inputmode="numeric" value="${state.won}" placeholder="0"><b>원</b></div></label><div class="payout-total"><span>지급할 달란트 <small>10% 보너스 포함</small></span><strong>${amount ? amount.mstText : '—'} MST</strong></div>${state.status ? `<p class="operator-alert">${state.status}</p>` : ''}${button(amount ? `${amount.mstText} MST 지급하기` : '금액을 입력해 주세요', 'send', 'operator-primary', !amount)}`;
+      const recipient = state.manualOpen
+        ? `<div class="operator-recipient-entry"><small>받는 손님</small><div><input id="manualAddress" type="text" inputmode="text" value="${esc(state.manualAddress)}" placeholder="0x 지갑 주소 붙여넣기" autocomplete="off"><button type="button" data-action="manual">확인</button></div></div>`
+        : state.recipient
+        ? `<div><small>받는 손님</small><strong>${short(state.recipient)}</strong><code>${state.recipient}</code></div><button type="button" data-action="scan">변경</button>`
+        : `<div><small>받는 손님</small><strong>손님 QR을 스캔해 주세요.</strong></div><button type="button" data-action="scan">QR 스캔하기</button>`;
+      screen.innerHTML = `<div class="operator-title"><span>01</span><h1>받은 현금을<br>입력해 주세요.</h1></div><div class="recipient-card operator-recipient">${recipient}</div><div class="preset-grid">${[5000,10000,30000,50000].map(v => `<button type="button" data-won="${v}">${v.toLocaleString('ko-KR')}원</button>`).join('')}</div><label class="amount-input"><span>현금 금액</span><div><input id="wonInput" type="text" inputmode="numeric" value="${state.won}" placeholder="0"><b>원</b></div></label><div class="payout-total"><span>지급할 MST <small>10% 보너스 포함</small></span><strong>${amount ? amount.mstText : '0'} MST</strong></div>${state.status ? `<p class="operator-alert">${state.status}</p>` : ''}${button(!state.recipient ? '손님 QR을 스캔해 주세요' : amount ? `${amount.mstText} MST 지급하기` : '금액을 입력해 주세요', 'send', 'operator-primary', !state.recipient || !amount)}`;
       return;
     }
     if (state.step === 'sending') {
       screen.innerHTML = `<div class="operator-center"><span class="operator-spinner"></span><h1>${state.tx ? '송금 완료를 확인하고 있어요.' : 'MetaMask에서 확인을 눌러주세요.'}</h1><p>${state.status || (state.tx ? '이 화면을 닫거나 다시 송금하지 마세요.' : '받는 주소와 금액을 확인해 주세요.')}</p>${state.tx ? `<code>${state.tx}</code>` : ''}</div>${state.tx && state.status ? button('완료 다시 확인', 'check') : ''}`;
       return;
     }
-    screen.innerHTML = `<div class="operator-success"><div class="success-mark">✓</div><span>지급 완료 · 10% 보너스 포함</span><h1>${Core.amountFromWon(state.won).mstText} MST</h1><p>${short(state.recipient)} 손님에게<br>달란트를 지급했어요.</p><code>${state.tx}</code></div>${button('다음 손님', 'next')}`;
+    screen.innerHTML = `<div class="operator-success"><div class="success-mark">✓</div><span>지급 완료 · 10% 보너스 포함</span><h1>${Core.amountFromWon(state.won).mstText} MST</h1><p>${short(state.recipient)} 손님에게<br>MST를 지급했어요.</p><code>${state.tx}</code></div>${button('다음 손님', 'next')}`;
   }
   function setState(next) { state = { ...state, ...next }; render(); }
   function onWallet(snapshot) {
     if (snapshot.status === 'ready') {
-      setState({ account: snapshot.account, balanceWei: snapshot.balanceWei, step: state.step === 'connect' ? 'scan' : state.step, status: '' });
+      setState({ account: snapshot.account, balanceWei: snapshot.balanceWei, step: state.step === 'connect' ? 'amount' : state.step, status: '' });
       return;
     }
     if (['connecting', 'adding', 'switching', 'querying', 'pending'].includes(snapshot.status)) {
@@ -69,7 +70,7 @@
     else if (snapshot.status !== 'idle') setState({ status: '지갑을 연결하지 못했어요. 다시 시도해 주세요.' });
   }
   async function connect() {
-    if (preview) { setState({ step: 'scan', account: '0x9999999999999999999999999999999999999999', balanceWei: (500n * 10n ** 18n).toString(), status: '' }); return; }
+    if (preview) { setState({ step: 'amount', account: null, balanceWei: (500n * 10n ** 18n).toString(), status: '' }); return; }
     provider = await discovery.getProvider();
     if (!provider) {
       const destination = `${location.host}${location.pathname}`;
@@ -83,7 +84,7 @@
     const address = Core.parseAddress(raw);
     if (!address) { setState({ status: '올바른 손님 QR이 아니에요.' }); return false; }
     stopScanner();
-    setState({ step: 'amount', recipient: address, won: '', status: '' });
+    setState({ step: 'amount', recipient: address, status: '', manualOpen: false, manualAddress: '' });
     return true;
   }
   async function scanImage(source) {
@@ -104,12 +105,13 @@
     frame = requestAnimationFrame(scanLoop);
   }
   async function startScanner() {
-    if (preview) { acceptAddress(SAMPLE_RECIPIENT); return; }
-    if (!navigator.mediaDevices?.getUserMedia) { setState({ status: '카메라를 열 수 없어요. QR 이미지를 선택해 주세요.' }); return; }
+    if (preview) { setState({ step: 'amount', manualOpen: true, status: '화면 테스트에서는 주소 입력 상태를 표시합니다.' }); return; }
+    if (stream) return;
+    if (!navigator.mediaDevices?.getUserMedia) { setState({ step: 'amount', manualOpen: true, status: '카메라를 열 수 없어요. 주소를 직접 입력해 주세요.' }); return; }
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' } } });
       video.srcObject = stream; scanner.hidden = false; await video.play(); scanLoop();
-    } catch { setState({ status: '카메라 권한을 허용하거나 QR 이미지를 선택해 주세요.' }); }
+    } catch { setState({ step: 'amount', manualOpen: true, status: '카메라 권한을 허용하거나 주소를 직접 입력해 주세요.' }); }
   }
   function stopScanner() {
     if (frame) cancelAnimationFrame(frame); frame = null;
@@ -165,16 +167,17 @@
     if (action === 'connect') void connect();
     else if (action === 'scan') void startScanner();
     else if (action === 'manual') acceptAddress(document.getElementById('manualAddress').value);
-    else if (action === 'back') setState({ step: 'scan', recipient: null, won: '', status: '' });
     else if (action === 'send') void send();
     else if (action === 'check') void checkReceipt();
-    else if (action === 'next') setState({ step: 'scan', recipient: null, won: '', tx: null, status: '' });
+    else if (action === 'next') setState({ step: 'amount', recipient: null, won: '', tx: null, status: '', manualOpen: false, manualAddress: '' });
   }
   function init() {
     screen.addEventListener('click', onClick);
-    screen.addEventListener('input', event => { if (event.target.id === 'wonInput') { state.won = event.target.value.replace(/[^0-9]/g, ''); render(); const input = document.getElementById('wonInput'); input?.focus(); input?.setSelectionRange(input.value.length, input.value.length); } });
+    screen.addEventListener('input', event => { if (event.target.id === 'wonInput') { state.won = event.target.value.replace(/[^0-9]/g, ''); render(); const input = document.getElementById('wonInput'); input?.focus(); input?.setSelectionRange(input.value.length,input.value.length); } else if (event.target.id === 'manualAddress') state.manualAddress = event.target.value; });
     screen.addEventListener('change', event => { if (event.target.id === 'qrFile') void readFile(event.target.files?.[0]); });
+    const openManual = () => { stopScanner(); setState({ step: 'amount', manualOpen: true, status: '' }); setTimeout(() => document.getElementById('manualAddress')?.focus(), 0); };
     document.getElementById('closeScanner').addEventListener('click', stopScanner);
+    document.getElementById('scannerManual').addEventListener('click', openManual);
     balanceButton.addEventListener('click', () => controller?.refresh());
     window.addEventListener('pagehide', () => { stopScanner(); controller?.dispose(); discovery?.dispose(); });
     if (!preview) {

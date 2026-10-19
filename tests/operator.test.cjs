@@ -26,11 +26,19 @@ test('adds a 10% bonus and converts whole 1,000 won units to exact native MST we
 });
 
 test('rechecks account, chain and balance before building a transaction', async () => {
-  const provider = { request: async ({ method }) => ({
-    eth_accounts: [account], eth_chainId: '0x1db1', eth_getBalance: '0x' + (100n * 10n ** 18n).toString(16)
-  })[method] };
+  const provider = { request: async ({ method, params }) => method === 'eth_getBalance'
+    ? '0x' + ((params[0] === recipient ? 0n : 100n * 10n ** 18n)).toString(16)
+    : ({ eth_accounts: [account], eth_chainId: '0x1db1' })[method] };
   const prepared = await Operator.prepareTransaction(provider, { account, recipient, won: 5000, chainId: '0x1db1' });
-  assert.deepEqual(prepared.transaction, { from: account, to: recipient, value: '0x4c53ecdc18a60000' });
+  assert.equal(prepared.gasTopUpWei, 50_000_000n);
+  assert.deepEqual(prepared.transaction, { from: account, to: recipient, value: '0x4c53ecdc1ba0f080' });
+});
+
+test('tops up only the missing part of the recipient gas reserve', () => {
+  assert.equal(Operator.gasTopUpFor(0n), 50_000_000n);
+  assert.equal(Operator.gasTopUpFor(20_000_000n), 30_000_000n);
+  assert.equal(Operator.gasTopUpFor(50_000_000n), 0n);
+  assert.equal(Operator.gasTopUpFor(500_000_000_000_000_000n), 0n);
 });
 
 test('blocks a changed operator account and an insufficient balance', async () => {

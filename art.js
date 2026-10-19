@@ -12,13 +12,6 @@ const icons = {
 
 const illustration = name => `<div class="illustration" aria-hidden="true"><svg viewBox="0 0 152 152" fill="none">${icons[name] || icons.wallet}</svg></div>`;
 function sampleQR() {
-  // Deliberately decorative, non-encoded pattern: never a real receiving address.
-  let cells='';
-  const finder=(x,y)=>`<rect x="${x}" y="${y}" width="7" height="7" rx=".5" fill="#45613b"/><rect x="${x+1}" y="${y+1}" width="5" height="5" fill="#fff"/><rect x="${x+2}" y="${y+2}" width="3" height="3" rx=".3" fill="#45613b"/>`;
-  for(let y=0;y<25;y++)for(let x=0;x<25;x++){
-    if((x<8&&y<8)||(x>16&&y<8)||(x<8&&y>16)||(x>7&&x<18&&y>8&&y<16))continue;
-    if((x*7+y*11+x*y)%5<2)cells+=`<rect x="${x}" y="${y}" width="1" height="1" fill="#45613b"/>`;
-  }
-  return `<div class="qr-shell"><svg viewBox="-2 -2 29 29" role="img" aria-label="스캔할 수 없는 미리보기용 QR 패턴"><rect x="-2" y="-2" width="29" height="29" fill="#fff"/>${cells}${finder(0,0)}${finder(18,0)}${finder(0,18)}<text x="12.5" y="13.6" text-anchor="middle" fill="#8a9d7a" font-size="2.5" font-family="sans-serif">SAMPLE</text></svg><small>미리보기용 QR · 스캔할 수 없습니다</small></div>`;
+  return `<div class="qr-shell qr-skeleton" role="status"><span></span><strong>QR 준비 중</strong><small>지갑이 연결되면 표시됩니다</small></div>`;
 }
 

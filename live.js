@@ -1,22 +1,45 @@
 (function (root) {
   'use strict';
   root.BazaarLive = { create };
-  function create({ Wallet, illustration }) {
+  function create({ Wallet, Store, illustration }) {
     const screen = document.getElementById('appScreen');
     let controller, discovery, view = 'welcome', phase = 'connect';
     let account = null, balanceWei = null, retryVisible = false, problem = '';
     let retryTimer, pending = false, disconnected = false, intent = false, externalPending = false;
-    let allowAppOpen = false;
+    let allowAppOpen = false, historyItems = [], historyLoading = false, historyAccount = null;
     const button = (text, action, secondary = false) => `<button type="button" class="${secondary ? 'secondary' : 'primary'}" data-live="${action}">${text}</button>`;
     const actions = (...content) => `<div class="actions">${content.join('')}</div>`;
     const heading = (text, sub = '') => `<h1 class="screen-title">${text}</h1>${sub ? `<p class="screen-description">${sub}</p>` : ''}`;
     const spinner = '<span class="spinner" aria-hidden="true"></span>';
+    const DISPLAY_STEP_WEI = 10n ** 15n;
+    function displayWei() {
+      if (balanceWei === null) return null;
+      const wei = BigInt(balanceWei);
+      return ((wei + DISPLAY_STEP_WEI / 2n) / DISPLAY_STEP_WEI) * DISPLAY_STEP_WEI;
+    }
     function balanceText() {
       if (balanceWei === null) return '—';
-      const wei = BigInt(balanceWei), divisor = 10n ** 18n;
-      if (wei > 0n && wei < 10n ** 14n) return '&lt; 0.0001';
-      const fraction = (wei % divisor).toString().padStart(18, '0').slice(0, 4).replace(/0+$/, '');
+      const wei = displayWei(), divisor = 10n ** 18n;
+      const fraction = (wei % divisor).toString().padStart(18, '0').slice(0, 3).replace(/0+$/, '');
       return (wei / divisor).toLocaleString('ko-KR') + (fraction ? '.' + fraction : '');
+    }
+    function formattedWei(value) {
+      const step = 10n ** 15n, raw = BigInt(value), rounded = ((raw + step / 2n) / step) * step;
+      const parts = Wallet.units(rounded).split('.');
+      return `${Number(parts[0]).toLocaleString('ko-KR')}${parts[1] ? '.' + parts[1].slice(0, 3) : ''} MST`;
+    }
+    function shortAccount() { return account ? `${account.slice(0,7)}...${account.slice(-5)}` : '—'; }
+    function historyHtml() {
+      if (historyLoading) return '<p class="store-empty">거래 내역을 불러오고 있어요.</p>';
+      if (!historyItems.length) return '<p class="store-empty">아직 거래 내역이 없어요.</p>';
+      return `<div class="store-history-list">${historyItems.map(item => `<div class="store-history-row"><time>${new Date(item.timestamp * 1000).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</time><strong class="${item.direction}">${item.direction === 'in' ? '+' : '−'}${formattedWei(item.valueWei)}</strong><span>${formattedWei(item.balanceWei)}</span></div>`).join('')}</div>`;
+    }
+    async function loadHistory(nextAccount) {
+      if (!nextAccount || historyLoading || historyAccount === nextAccount) return;
+      historyAccount = nextAccount; historyLoading = true; historyItems = []; if (view === 'home') paint();
+      try { historyItems = await Store.recentTransfers(window.fetch.bind(window), { account:nextAccount, rpcUrl:Wallet.NETWORK.rpcUrls[0], blockWindow:1200, limit:5 }); }
+      catch { historyItems = []; }
+      finally { historyLoading = false; if (view === 'home' && account === nextAccount) paint(); }
     }
     function render() {
       if (view === 'opening') return `<div class="center-state">${illustration('phone')}${heading('앱으로 이동할게요.', '화면이 바뀌지 않으면 눌러주세요.')}</div>` + actions(button('눌러서 이동', 'open-app'), button('앱 설치하기', 'install', true));
@@ -26,11 +49,11 @@
       }
       if (view === 'home' || view === 'balance-error') {
         const failed = view === 'balance-error';
-        const krw = balanceWei === null ? '—' : (BigInt(balanceWei) * 1000n / (10n ** 18n)).toLocaleString('ko-KR');
-        return heading('내 달란트') + `<div class="balance-panel"><div class="balance-caption">사용 가능한 금액</div><div class="balance-number">${failed ? '—' : balanceText()}${failed ? '' : '<span>달란트</span>'}</div><div class="balance-krw">${failed ? '잔액을 확인하지 못했어요.' : krw + '원 상당'}</div></div>` + (failed ? actions(button('다시 확인', 'refresh')) : actions(button('충전하기', 'receive'), button('매장 결제하기', 'pay', true)));
+        const krw = balanceWei === null ? '—' : (displayWei() / DISPLAY_STEP_WEI).toLocaleString('ko-KR');
+        return heading('내 지갑') + `<div class="balance-panel"><div class="balance-wallet-row"><code>${shortAccount()}</code><button type="button" data-live="copy-address">복사하기</button></div><div class="balance-number">${failed ? '—' : balanceText()}${failed ? '' : '<span>MST</span>'}</div><div class="balance-krw">${failed ? '잔액을 확인하지 못했어요.' : krw + '원 상당'}</div></div>` + (failed ? `<div class="balance-actions single">${button('다시 확인', 'refresh')}</div>` : `<div class="balance-actions">${button('충전하기', 'receive')}${button('가게 결제하기', 'pay', true)}<button type="button" class="home-store-link" data-live="store">내 가게</button></div><section class="store-history home-history"><h2>최근 거래</h2><div class="store-history-head"><span>시간</span><span>금액</span><span>잔액</span></div>${historyHtml()}</section>`);
       }
-      if (view === 'receive') return heading('현금 결제 후 직원에게<br>이 QR을 보여주세요.') + `<div id="liveQr" class="live-qr" role="img" aria-label="내 지갑 주소 QR 코드"></div><div class="live-address"><code>${account || ''}</code></div>` + actions(button('주소 복사하기', 'copy'), button('내 달란트로', 'home', true));
-      return heading('달란트로<br>즐거운 바자회.', '충전하고 간편하게 사용하세요.') + illustration('coin') + actions(button('시작하기', 'start'), button('앱 설치하기', 'install', true));
+      if (view === 'receive') return heading('현금 결제 후 직원에게<br>이 QR을 보여주세요.') + `<div id="liveQr" class="live-qr" role="img" aria-label="내 지갑 주소 QR 코드"></div><div class="live-address"><code>${account || ''}</code></div>` + actions(button('주소 복사하기', 'copy'), button('내 지갑으로', 'home', true));
+      return heading('MST로<br>즐거운 바자회.', '충전하고 간편하게 사용하세요.') + illustration('coin') + actions(button('시작하기', 'start'), button('앱 설치하기', 'install', true));
     }
     function renderReceiveQr() {
       const target = document.getElementById('liveQr');
@@ -55,7 +78,7 @@
           account = snapshot.account; balanceWei = snapshot.balanceWei;
           intent = false; allowAppOpen = false; externalPending = false;
           if (view === 'receive') { paint(); return; }
-          show('home'); return;
+          show('home'); void loadHistory(account); return;
         case 'idle': account = null; intent = false; allowAppOpen = false; show('welcome'); return;
         case 'unavailable':
           account = null; show(intent ? 'opening' : 'welcome');
@@ -103,6 +126,10 @@
           break;
         case 'receive': if (account) show('receive', 'push'); break;
         case 'pay': if (account) location.assign('/pay.html?scan=1'); break;
+        case 'store': location.assign('/store.html'); break;
+        case 'copy-address':
+          if (account && navigator.clipboard) navigator.clipboard.writeText(account).then(() => { target.textContent = '복사했어요'; }).catch(() => { target.textContent = '길게 눌러 복사'; });
+          else target.textContent = '길게 눌러 복사'; break;
         case 'refresh': void controller.refresh(); break;
         case 'copy':
           if (account && navigator.clipboard) navigator.clipboard.writeText(account).then(() => { target.textContent = '복사했어요'; }).catch(() => { target.textContent = '주소를 길게 눌러 복사해 주세요'; });

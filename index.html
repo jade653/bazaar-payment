@@ -4,11 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f7f8f4">
-  <title>바자회 달란트</title>
+  <title>MST 파운데이션 달란트</title>
   <link rel="icon" href="assets/talent-mark.svg" type="image/svg+xml">
   <link rel="stylesheet" href="styles.css?v=20261019-4">
   <script src="art.js" defer></script>
   <script src="wallet.js?v=20261019-2" defer></script>
+  <script src="store-core.js" defer></script>
   <script src="vendor/qrcode.min.js" defer></script>
   <script src="live.js?v=20261019-2" defer></script>
   <script src="app.js?v=20261019-4" defer></script>
@@ -16,7 +17,7 @@
 <body>
   <div class="workspace">
     <aside class="sidebar" aria-label="미리보기 설정">
-      <a class="studio-brand" href="#welcome"><img class="brand-mark" src="assets/talent-mark.svg" alt=""><span>바자회 달란트<small>UI PREVIEW</small></span></a>
+      <a class="studio-brand" href="#home"><img class="brand-mark" src="assets/talent-mark.svg" alt=""><span>MST 파운데이션 달란트<small>UI PREVIEW</small></span></a>
       <div class="sidebar-intro"><h1>충전하고,<br>바로 사용하세요.</h1></div>
       <div class="scenario-picker"><label for="stateSelect">미리볼 화면</label><select id="stateSelect"></select></div>
       <nav id="stateNav" class="state-nav" aria-label="상태별 화면"></nav>
@@ -27,7 +28,7 @@
       <header class="canvas-header"><div><span class="eyebrow">COMMUNITY BAZAAR</span><h2>화면 테스트</h2></div><button id="resetButton" class="text-button" type="button">처음부터 보기 <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.34 5.66M20 5v6h-6"/></svg></button></header>
       <div class="preview-layout">
         <section class="device" aria-label="바자회 서비스 화면">
-          <header class="app-header"><span class="app-brand"><img class="brand-mark small" src="assets/talent-mark.svg" alt="">바자회 달란트</span><span class="event-pill">화면 시안</span></header>
+          <header class="app-header"><a class="app-brand" href="#home" aria-label="홈으로 이동"><img class="brand-mark small" src="assets/talent-mark.svg" alt="">MST 파운데이션 달란트</a><span class="event-pill">화면 시안</span></header>
           <div id="appScreen" class="app-screen" aria-live="polite"></div>
           <footer class="app-footer">화면 시안 <span>·</span> 실제 충전·결제는 진행되지 않습니다</footer>
         </section>

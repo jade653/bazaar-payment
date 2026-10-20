@@ -5,6 +5,7 @@
   const preview = new URL(location.href).searchParams.has('preview');
   let discovery, controller, disposed = false;
   let forceHistory = false;
+  let renderedAccount, renderedName, renderedQr, settledHistoryAccount;
   let state = { account:null, balanceWei:null, name:localStorage.getItem('bazaar-store-name') || '', status:'' };
   const history = window.BazaarHistory.create({
     chainId:Wallet.NETWORK.chainId, limit:20, storage:preview ? null : undefined,
@@ -19,13 +20,37 @@
   function render() {
     if (disposed) return;
     balanceNode.hidden = !state.account;
-    balanceNode.querySelector('span').textContent = UI.mst(state.balanceWei);
+    const balanceText = UI.mst(state.balanceWei), balanceValue = balanceNode.querySelector('span');
+    if (balanceValue.textContent !== balanceText) balanceValue.textContent = balanceText;
     if (!state.account) {
-      screen.innerHTML = `<div class="operator-hero"><h1>가게 지갑을<br>연결해 주세요.</h1><p>받기 QR과 잔액, 거래 내역을 확인합니다.</p>${UI.alert(state.status)}</div><button class="operator-primary" data-store="connect" type="button">가게 지갑 연결하기</button>`;
+      const markup = `<div class="operator-hero"><h1>가게 지갑을<br>연결해 주세요.</h1><p>받기 QR과 잔액, 거래 내역을 확인합니다.</p>${UI.alert(state.status)}</div><button class="operator-primary" data-store="connect" type="button">가게 지갑 연결하기</button>`;
+      if (screen.innerHTML !== markup) screen.innerHTML = markup;
+      renderedAccount = null; renderedName = undefined; renderedQr = undefined; settledHistoryAccount = undefined;
       return;
     }
-    screen.innerHTML = `<div class="store-name-row"><div><input id="storeName" maxlength="30" value="${UI.esc(state.name)}" aria-label="가게 이름 (선택)" placeholder="가게 이름 (선택)"><button type="button" data-store="save-name">저장</button></div></div><section class="store-card"><div class="store-card-title"><span>받기 QR</span><strong>${UI.esc(state.name || '우리 가게')}</strong></div>${UI.qrMarkup('storeQr', '가게 받기 QR')}</section><a class="operator-secondary pay-link-button" href="/pay.html?mode=transfer${preview ? '&preview=1' : ''}">송금하기</a>${UI.history(history.snapshot())}${UI.alert(state.status)}`;
-    UI.renderQr(document.getElementById('storeQr'), Transfer.receiveLink(state.account, { name:state.name }), { preview });
+    const accountKey = state.account.toLowerCase();
+    if (renderedAccount !== accountKey) {
+      screen.innerHTML = `<div class="store-name-row"><div><input id="storeName" maxlength="30" value="${UI.esc(state.name)}" aria-label="가게 이름 (선택)" placeholder="가게 이름 (선택)"><button type="button" data-store="save-name">저장</button></div></div><section class="store-card"><div class="store-card-title"><span>받기 QR</span><strong id="storeQrName"></strong></div>${UI.qrMarkup('storeQr', '가게 받기 QR')}</section><a class="operator-secondary pay-link-button" href="/pay.html?mode=transfer${preview ? '&preview=1' : ''}">송금하기</a><div id="storeHistory"></div><div id="storeStatus" hidden></div>`;
+      renderedAccount = accountKey; renderedName = undefined; renderedQr = undefined; settledHistoryAccount = undefined;
+    }
+    if (renderedName !== state.name) {
+      document.getElementById('storeQrName').textContent = state.name || '우리 가게';
+      renderedName = state.name;
+    }
+    const qrLink = Transfer.receiveLink(state.account, { name:state.name });
+    if (renderedQr !== qrLink) {
+      UI.renderQr(document.getElementById('storeQr'), qrLink, { preview });
+      renderedQr = qrLink;
+    }
+    const snapshot = history.snapshot();
+    if (snapshot.account === accountKey && !snapshot.loading && !snapshot.error) settledHistoryAccount = accountKey;
+    // Keep existing rows still during background reads, including their height.
+    const historyMarkup = UI.history({ ...snapshot, loading:snapshot.loading && (settledHistoryAccount !== accountKey || !!snapshot.error) });
+    const historyNode = document.getElementById('storeHistory');
+    if (historyNode.innerHTML !== historyMarkup) historyNode.innerHTML = historyMarkup;
+    const statusNode = document.getElementById('storeStatus'), statusMarkup = UI.alert(state.status);
+    statusNode.hidden = !state.status;
+    if (statusNode.innerHTML !== statusMarkup) statusNode.innerHTML = statusMarkup;
   }
   function set(next) { state = { ...state, ...next }; render(); }
   function onWallet(snapshot) {
@@ -34,7 +59,10 @@
       void history.load(snapshot.account, { balanceWei:snapshot.balanceWei, force:forceHistory });
       forceHistory = false;
     } else if (['connecting','adding','switching','pending','querying'].includes(snapshot.status)) {
+      if (snapshot.status === 'querying' && state.account) return;
       set({ status:snapshot.status === 'querying' ? '잔액을 확인하고 있어요.' : 'MetaMask에서 확인을 눌러주세요.' });
+    } else if (snapshot.status === 'error' && snapshot.duringBalance && state.account) {
+      set({ status:'잔액을 확인하지 못했어요. 잠시 후 자동으로 다시 확인합니다.' });
     } else {
       history.clear();
       set({ needsApp:snapshot.status === 'unavailable', account:null, balanceWei:null, status:snapshot.status === 'idle' ? '' : snapshot.status === 'cancelled' ? '연결이 취소됐어요.' : '가게 지갑을 다시 연결해 주세요.' });
@@ -53,6 +81,7 @@
     if (target.dataset.store === 'connect') void connect();
     else if (target.dataset.store === 'save-name') {
       state.name = document.getElementById('storeName').value.trim().slice(0, 30);
+      document.getElementById('storeName').value = state.name;
       localStorage.setItem('bazaar-store-name', state.name); render();
     }
   });
@@ -60,8 +89,8 @@
   balanceNode.addEventListener('click', () => { forceHistory = true; refresh(); });
   window.addEventListener('focus', refresh); document.addEventListener('visibilitychange', refresh);
   const syncTimer = preview ? null : window.setInterval?.(() => {
-    if (state.account && document.visibilityState === 'visible') { forceHistory = true; refresh(); }
-  }, window.BazaarHistory.SYNC_INTERVAL);
+    if (state.account && document.visibilityState === 'visible') refresh();
+  }, 5000);
   window.addEventListener('pagehide', event => { if (!event.persisted) { window.clearInterval?.(syncTimer); disposed = true; controller?.dispose(); discovery?.dispose(); history.clear(); } });
   if (preview) {
     state.account = '0x' + '1'.repeat(40); state.balanceWei = '125500000005000000000';

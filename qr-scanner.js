@@ -45,7 +45,6 @@
     }
     async function readFile(file) {
       if (!file) return;
-      if (preview) { report('미리보기에서는 실제 QR을 인식하지 않아요. 예시 QR로 확인해 주세요.'); return; }
       const revision = generation;
       const url = URL.createObjectURL(file);
       try {

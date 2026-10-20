@@ -20,7 +20,7 @@
       screen.innerHTML = `<div class="operator-hero"><h1>가게 지갑을<br>연결해 주세요.</h1><p>받기 QR과 잔액, 거래 내역을 확인합니다.</p>${UI.alert(state.status)}</div><button class="operator-primary" data-store="connect" type="button">가게 지갑 연결하기</button>`;
       return;
     }
-    screen.innerHTML = `<div class="store-name-row"><label for="storeName">가게 이름 <small>(선택)</small></label><div><input id="storeName" maxlength="30" value="${UI.esc(state.name)}" placeholder="예: 사랑 분식"><button type="button" data-store="save-name">저장</button></div></div><section class="store-card"><div class="store-card-title"><span>받기 QR</span><strong>${UI.esc(state.name || '우리 가게')}</strong></div>${UI.qrMarkup('storeQr', '가게 받기 QR')}</section><a class="operator-secondary pay-link-button" href="/pay.html?mode=transfer${preview ? '&preview=1' : ''}">송금하기</a>${UI.history(history.snapshot())}${UI.alert(state.status)}`;
+    screen.innerHTML = `<div class="store-name-row"><div><input id="storeName" maxlength="30" value="${UI.esc(state.name)}" aria-label="가게 이름 (선택)" placeholder="가게 이름 (선택)"><button type="button" data-store="save-name">저장</button></div></div><section class="store-card"><div class="store-card-title"><span>받기 QR</span><strong>${UI.esc(state.name || '우리 가게')}</strong></div>${UI.qrMarkup('storeQr', '가게 받기 QR')}</section><a class="operator-secondary pay-link-button" href="/pay.html?mode=transfer${preview ? '&preview=1' : ''}">송금하기</a>${UI.history(history.snapshot())}${UI.alert(state.status)}`;
     UI.renderQr(document.getElementById('storeQr'), Transfer.paymentLink(state.account, state.name), { preview });
   }
   function set(next) { state = { ...state, ...next }; render(); }

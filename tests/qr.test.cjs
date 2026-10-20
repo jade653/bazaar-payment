@@ -45,13 +45,13 @@ test('failed QR image decoding always releases its object URL', async () => {
   assert.equal(page.nodes.get('[data-file]').value, '');
 });
 
-test('image selection accepts a QR and stops the active camera', async () => {
+for (const preview of [false,true]) test(`image selection recognizes a QR and closes the scanner (preview=${preview})`, async () => {
   let stops=0, accepted;
-  const page=harness(async () => ({getTracks:()=>[{stop(){stops++;}}]}), {decode:async()=>{},accept:data=>{accepted=data;return true;}});
+  const page=harness(async () => ({getTracks:()=>[{stop(){stops++;}}]}), {preview,decode:async()=>{},accept:data=>{accepted=data;return true;}});
   await page.scanner.start();
   await page.chooseFile();
   assert.equal(accepted,'sample QR');
-  assert.equal(stops,1);
+  assert.equal(stops,preview?0:1);
   assert.equal(page.overlay.hidden,true);
   assert.equal(page.revoked(),1);
 });

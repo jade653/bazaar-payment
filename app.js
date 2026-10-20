@@ -52,6 +52,7 @@ let paymentCompleted=false;
 let chargeCompleted=false;
 let merchantReady=false;
 let previewManual=false, previewManualAddress='', previewTarget=previewRecipient, previewStatus='';
+let previewScanner;
 const points=()=>amount/1000;
 const action=(label,kind='primary',data='')=>`<button type="button" class="${kind}" ${data}>${label}</button>`;
 const goButton=(label,id,kind='primary')=>action(label,kind,`data-go="${id}"`);
@@ -120,6 +121,7 @@ function beginRequest(){
   requestTimer=setTimeout(()=>{showRetry=true;paint();},8000);
 }
 function go(id){
+  previewScanner?.stop();
   clearTimers();currentId=aliases[id]||id;
   if(!allStates.some(s=>s.id===currentId))currentId='welcome';
   showRetry=false;retryReason='';requestPending=false;
@@ -180,6 +182,13 @@ function requestPayment(){
   paymentCompleted=false;go('payment-approval');
 }
 
+function openPreviewManual(){merchantReady=false;previewManual=true;previewManualAddress='';previewStatus='';paint();}
+function acceptPreviewRecipient(raw){
+  const recipient=BazaarTransfer.parseRecipient(raw);
+  if(!recipient){previewStatus=UI.errorText('INVALID_ADDRESS');paint();return false;}
+  previewTarget=recipient;merchantReady=true;previewManual=false;previewStatus='';previewScanner?.stop();paint();return true;
+}
+
 for(const [list,target] of [[mainStates,'stateNav'],[extraStates,'extraStates']]){
   const group=document.createElement('optgroup');group.label=target==='stateNav'?'기본 화면':'다른 상황';
   for(const state of list){
@@ -195,14 +204,11 @@ document.addEventListener('click',event=>{
   if(b.dataset.go){if(b.dataset.go==='pay-manual')merchantReady=false;go(b.dataset.go);return;}
   if(b.dataset.transfer){
     switch(b.dataset.transfer){
-      case'scan':merchantReady=true;previewManual=false;previewStatus='';paint();break;
-      case'manual':merchantReady=false;previewManual=true;previewManualAddress='';paint();break;
-      case'accept':{
-        const recipient=BazaarTransfer.parseRecipient(previewManualAddress);
-        if(recipient){previewTarget=recipient;merchantReady=true;previewManual=false;previewStatus='';}
-        else previewStatus=UI.errorText('INVALID_ADDRESS');
-        paint();break;
-      }
+      case'scan':
+        previewScanner ||= BazaarScanner.create({preview:true,onAccept:acceptPreviewRecipient,onPreview:()=>acceptPreviewRecipient(previewRecipient),onManual:openPreviewManual,onError:status=>{previewStatus=status;paint();}});
+        void previewScanner.start();break;
+      case'manual':openPreviewManual();break;
+      case'accept':acceptPreviewRecipient(previewManualAddress);break;
       case'submit':requestPayment();break;
       case'check':go('payment-pending');break;
       case'retry':retry();break;
@@ -225,7 +231,6 @@ appScreen.addEventListener('input',event=>{
   const value=Number(event.target.value.replace(/[^0-9]/g,''));amount=Number.isSafeInteger(value)&&value>0?value:0;
   paint();const input=document.getElementById('transferAmount');input?.focus();input?.setSelectionRange(cursor,cursor);
 });
-appScreen.addEventListener('change',event=>{if(preview&&event.target.id==='transferQrFile'){previewStatus='미리보기에서는 실제 QR을 인식하지 않습니다.';paint();}});
 stateSelect.addEventListener('change',()=>selectState(stateSelect.value));
 document.getElementById('approveDemo').addEventListener('click',approve);
 document.getElementById('cancelDemo').addEventListener('click',()=>cancelApproval());
@@ -235,5 +240,5 @@ document.getElementById('previousState').addEventListener('click',()=>selectStat
 document.getElementById('nextState').addEventListener('click',()=>selectState(allStates[Math.min(allStates.length-1,allStates.findIndex(s=>s.id===currentId)+1)].id));
 document.getElementById('resetButton').addEventListener('click',()=>{selectState('welcome');balance=0;});
 window.addEventListener('hashchange',()=>{if(preview)selectState(location.hash.slice(1));});
-if(preview){if(location.hash)selectState(location.hash.slice(1));else go('welcome');}
+if(preview){window.addEventListener('pagehide',()=>previewScanner?.stop());if(location.hash)selectState(location.hash.slice(1));else go('welcome');}
 else BazaarLive.create({Wallet:BazaarWallet,illustration}).init();

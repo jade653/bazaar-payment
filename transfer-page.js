@@ -49,11 +49,10 @@
   }
   function openManual() { scanner?.stop(); set({ manual:true, manualAddress:'', recipient:null, recipientName:'', status:'' }); }
   function scan() {
-    if (preview) { openManual(); set({ status:'미리보기에서는 예시 주소를 입력해 주세요.' }); return; }
     void getScanner().start();
   }
   function getScanner() {
-    return scanner ||= window.BazaarScanner.create({ onAccept:accept, onError:status => set({ status }), onManual:openManual });
+    return scanner ||= window.BazaarScanner.create({ onAccept:accept, onError:status => set({ status }), onManual:openManual, preview, onPreview:() => accept('0x' + '2'.repeat(40)) });
   }
   function openMetaMask() {
     const url = new URL(location.href);
@@ -135,11 +134,6 @@
     const field = document.getElementById('transferAmount'); field?.focus(); field?.setSelectionRange(start, end);
   }
   screen.addEventListener('click', click); screen.addEventListener('input', input);
-  screen.addEventListener('change', event => {
-    if (event.target.id !== 'transferQrFile') return;
-    if (preview) { set({ status:'미리보기에서는 실제 QR을 인식하지 않습니다.' }); return; }
-    void getScanner().readFile(event.target.files?.[0]);
-  });
   if (!preview) {
     discovery = Wallet.discover(window);
     controller = Wallet.createWallet({ getProvider:() => discovery.getProvider(), onState:onWallet, readBalanceFromRpc });

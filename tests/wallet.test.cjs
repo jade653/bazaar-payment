@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {EventEmitter} = require('node:events');
-const {createWallet, createRpcBalanceReader, NETWORK, units, discover} = require('../wallet.js');
+const {createWallet, createRpcBalanceReader, NETWORK, discover} = require('../wallet.js');
 const A = '0x' + '1'.repeat(40), B = '0x' + '2'.repeat(40);
 const wait = () => new Promise(resolve => setTimeout(resolve, 15));
 function deferred(){let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return{promise,resolve,reject};}
@@ -32,10 +32,9 @@ function fixture(provider,options={}){
   return{wallet,snapshots,methods:()=>provider.calls.map(c=>c.method)};
 }
 
-test('network uses the verified RPC and exact 18-decimal balance formatting',()=>{
+test('network uses the verified RPC and 18-decimal MST currency',()=>{
   assert.equal(NETWORK.chainId,'0x1db1');assert.deepEqual(NETWORK.rpcUrls,['https://block.mustree.kr']);
-  assert.equal(units('1'),'0.000000000000000001');
-  assert.equal(units('123456789012345678901234567890'),'123456789012.34567890123456789');
+  assert.equal(NETWORK.nativeCurrency.decimals,18);
 });
 test('new user connects, adds, switches after add, then reads the real balance',async t=>{
   const p=new Provider({accounts:[],chain:'0x1',added:false,raw:'0x98a7d9b8314c0000'}),f=fixture(p);t.after(()=>f.wallet.dispose());

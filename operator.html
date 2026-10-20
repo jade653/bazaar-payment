@@ -4,28 +4,23 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f7f8f4">
-  <title>MST 지급</title>
+  <title>MST 충전</title>
   <link rel="icon" href="assets/talent-mark.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="styles.css">
-  <script src="wallet.js?v=20261019-2" defer></script>
-  <script src="operator-core.js" defer></script>
-  <script src="vendor/jsQR.min.js" defer></script>
-  <script src="operator.js?v=20261019-2" defer></script>
+  <link rel="stylesheet" href="styles.css?v=20261020-8">
+  <script src="wallet.js?v=20261020-4" defer></script>
+  <script src="transfer-core.js?v=20261020-4" defer></script>
+  <script src="payment-ui.js?v=20261020-4" defer></script>
+  <script src="vendor/jsQR.min.js?v=20261020-4" defer></script>
+  <script src="qr-scanner.js?v=20261020-4" defer></script>
+  <script src="transfer-page.js?v=20261020-4" defer></script>
 </head>
 <body class="operator-body">
   <main class="operator-app">
     <header class="operator-header">
-      <a class="operator-brand" href="/" aria-label="홈으로 이동"><img src="assets/talent-mark.svg" alt=""><div><strong>MST 지급</strong></div></a>
+      <a class="operator-brand" href="/" aria-label="홈으로 이동"><img src="assets/talent-mark.svg" alt=""><div><strong>MST 충전</strong></div></a>
       <button id="balanceButton" class="operator-balance" type="button" hidden><span id="balanceText">— MST</span><small>잔액 새로고침</small></button>
     </header>
-    <section id="operatorScreen" class="operator-screen" aria-live="polite"></section>
+    <section id="operatorScreen" data-transfer-kind="topup" class="operator-screen" aria-live="polite"></section>
   </main>
-  <div id="scanner" class="scanner" hidden>
-    <div class="scanner-bar"><strong>손님 QR을 비춰주세요</strong><button id="closeScanner" type="button" aria-label="스캐너 닫기">닫기</button></div>
-    <video id="scannerVideo" playsinline muted></video>
-    <div class="scanner-frame" aria-hidden="true"></div>
-    <div class="scanner-actions"><p id="scannerMessage">QR이 사각형 안에 오도록 맞춰주세요.</p><button id="scannerManual" type="button">주소 직접 입력</button></div>
-    <canvas id="scannerCanvas" hidden></canvas>
-  </div>
 </body>
 </html>

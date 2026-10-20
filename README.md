@@ -1,49 +1,62 @@
-# 바자회 달란트
+# MST 파운데이션 달란트
 
-빌드·외부 라이브러리 없이 동작하는 HTML/CSS/JavaScript 서비스입니다.
+빌드 단계 없이 동작하는 HTML/CSS/JavaScript 서비스입니다. QR 생성·인식 라이브러리는 vendor/에 포함되어 있습니다.
 
-## 실제 연결
+## 화면과 공통 구조
+
+- index.html: 개인 지갑 잔액, 충전용 받기 QR, 최근 거래
+- operator.html: 직원이 현금을 받고 손님 지갑으로 충전 송금
+- pay.html: 가게 결제 또는 mode=transfer인 일반 MST 송금
+- store.html: 가게 받기 QR, 잔액, 최근 거래, 공통 송금 화면으로 이동
+- merchant.html: 연결 없이 주소를 입력해 가게 받기 QR 생성
+
+송금은 역할에 관계없이 transfer-core.js의 검증·전송·영수증 확인을 사용합니다.
+transfer-page.js가 지갑 연결과 송금 상태를 관리하고 payment-ui.js가 공통 입력·대기·완료 화면을 만듭니다.
+금액 계산과 충전 보너스·가스비 지원 정책도 transfer-core.js에서 처리합니다. 결제·충전 페이지는 HTML의 data-transfer-kind로 역할만 지정합니다.
+QR 카메라·이미지 인식은 qr-scanner.js, QR 생성과 금액·주소 표시는 payment-ui.js로 통일했습니다.
+개인·가게 내역의 조회와 계정별 갱신은 transaction-history.js, 표시는 payment-ui.js를 공유합니다.
+계정이 바뀌거나 연결이 해제되면 이전 내역 응답은 무시하며 조회 실패를 빈 내역으로 표시하지 않습니다.
+
+## 송금 정책
+
+| 종류 | 입력 | 송금액 |
+| --- | --- | --- |
+| 가게 결제 | 원화 정수, 최대 10,000,000원 | 1,000원 = 1 MST |
+| 직원 충전 | 1,000원 단위 | 10% 보너스 및 기존 수령자 가스비 지원 정책 적용 |
+| 일반 송금 | MST, 소수 셋째 자리까지 | 입력한 MST |
+
+실제 모드에서는 MetaMask 승인을 통해 네이티브 MST를 전송합니다.
+계정·네트워크를 잔액 조회 전후로 재검증하고, 잔액 조회 실패 시 공개 RPC 조회를 지원합니다.
+송금 결과 확인이 지연되면 기존 거래 해시만 다시 확인하며 새 송금을 막습니다.
+잔액은 모든 화면에서 소수 셋째 자리까지 같은 방식으로 반올림하지만 실제 송금 계산은 정확한 wei를 사용합니다.
+최근 거래는 제한된 최근 블록 범위에서 조회하며 잔액 열은 해당 블록 종료 시점의 잔액입니다.
+
+## 지갑 연결
 
 - 서비스: https://bazaar.mustree.kr/
-- 시작하기 → MetaMask 계정 연결 → Mustree 추가/전환 → 잔액 자동 조회
-- 모바일 일반 브라우저에서는 MetaMask 내부 브라우저로 이동해 이어갑니다.
-- 이미 허용된 계정과 올바른 네트워크는 추가 승인 없이 잔액을 표시합니다.
-- 최초 방문에서는 사용자 행동 없이 계정 접근 승인을 요청하지 않습니다.
-- 승인 취소·조회 오류·네트워크 변경·계정 변경·중복 요청을 처리합니다.
-- 잔액은 실제 네이티브 MST 잔액입니다. UI에서는 1 MST를 1 달란트, 1,000원 상당으로 표시합니다.
+- 최초 방문 시 사용자 동작 없이 계정 접근 승인을 요청하지 않습니다.
+- 연결된 계정과 Mustree 네트워크는 추가 승인 없이 복원합니다.
+- 모바일 일반 브라우저는 MetaMask 내부 브라우저로 이어집니다.
+- 네트워크 설정은 wallet.js의 NETWORK에서 관리합니다.
 
-네트워크 설정은 `wallet.js`의 `NETWORK`에서 관리합니다.
-RPC: `https://block.mustree.kr`, Chain ID: `7601` (`0x1db1`), 기호: `MST`, decimals: `18`.
+RPC: https://block.mustree.kr, Chain ID: 7601 (0x1db1), 기호: MST, decimals: 18.
 
-**실제 결제·서명·송금은 구현하지 않았습니다.** 실제 모드에서는 결제 버튼과 예시 영수증을 표시하지 않습니다.
-충전 안내에는 연결된 실제 주소와 복사 버튼만 제공합니다. QR 생성은 아직 연결하지 않았습니다.
+## 미리보기와 테스트
 
-## UI 미리보기
+각 화면 URL에 ?preview=1을 붙이면 실제 지갑 조회·승인·송금 없이 공통 UI를 확인할 수 있습니다.
+개인 지갑 미리보기는 상태 선택기로 승인·취소·실패·지연 상황을 재현합니다.
+미리보기 QR은 실제 송금에 사용할 수 없는 안내 그림입니다.
 
-https://bazaar.mustree.kr/?preview=1
+로컬 실행:
 
-이 모드는 실제 지갑과 완전히 분리된 예시입니다. Confirm/취소/충전/결제를 재현할 수 있으며,
-진짜 계정 주소나 잔액을 읽지 않습니다. 미리보기 QR은 스캔할 수 없는 샘플입니다.
+    python -m http.server 8001 --bind 127.0.0.1
+    node --test tests/*.test.cjs
 
-## 로컬 실행과 테스트
-
-```powershell
-python -m http.server 8001 --bind 127.0.0.1
-node --test tests/wallet.test.cjs
-```
-
-http://localhost:8001/ 에서 실행합니다. 휴대폰의 MetaMask는 PC localhost에 접속할 수 없어,
-로컬 페이지에서 앱 열기를 누르면 실제 배포 주소로 안내합니다.
-
-기기에서 확인할 항목:
-1. 첫 연결·Mustree 미등록: 필요한 승인 후 실제 잔액까지 표시되는지
-2. 재방문: 불필요한 계정 연결 승인이 반복되지 않는지
-3. 승인 취소: 재요청으로 미완료 단계부터 이어지는지
-4. 계정/네트워크 변경: 이전 잔액이 표시되지 않는지
-5. iPhone Safari / Galaxy Chrome → MetaMask 앱 이동
+http://localhost:8001/ 에서 실행합니다. 휴대폰 MetaMask는 PC localhost에 접근할 수 없어 앱 이동 시 실제 배포 주소를 사용합니다.
+실제 기기의 카메라 권한과 MetaMask 승인·계정/네트워크 변경은 별도로 확인해야 합니다.
 
 ## 배포
 
 저장소: https://github.com/jade653/bazaar-payment
-main 변경 시 테스트 후 GitHub Actions로 Pages에 배포합니다.
+main 변경 시 모든 JavaScript의 문법 검사와 테스트 후 HTML/CSS/JavaScript, assets/, vendor/를 GitHub Pages에 배포합니다.
 자세한 초기 설정은 [DEPLOY.md](DEPLOY.md)를 참고하세요.

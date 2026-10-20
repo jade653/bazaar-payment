@@ -1,35 +1,66 @@
-(function(){
-'use strict';
-const Wallet=window.BazaarWallet,Payment=window.BazaarPayment,Store=window.BazaarStore;
-const screen=document.getElementById('storeScreen'),revenueNode=document.getElementById('storeRevenue'),scanner=document.getElementById('storeScanner'),video=document.getElementById('storeVideo'),canvas=document.getElementById('storeCanvas');
-const preview=new URL(location.href).searchParams.get('preview')==='1';
-let discovery,controller,provider,stream,frame,busy=false;
-let state={step:'connect',account:null,balanceWei:null,name:localStorage.getItem('bazaar-store-name')||'',recipient:'',manual:false,amount:'',status:'',hash:null,history:[],historyLoading:false};
-const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const short=value=>value?`${value.slice(0,8)}…${value.slice(-6)}`:'';
-const button=(label,action,secondary=false,disabled=false)=>`<button class="${secondary?'operator-secondary':'operator-primary'}" data-store="${action}" type="button"${disabled?' disabled':''}>${label}</button>`;
-function formattedWei(value){const step=10n**15n,raw=BigInt(value),rounded=((raw+step/2n)/step)*step,parts=Wallet.units(rounded).split('.');return`${Number(parts[0]).toLocaleString('ko-KR')}${parts[1]?'.'+parts[1].slice(0,3):''} MST`;}
-function visibleBalance(){return state.balanceWei===null?'— MST':formattedWei(state.balanceWei);}
-function qrLink(){return state.account?Store.paymentLink(state.account,state.name):null;}
-function errorText(code){return({INVALID_ADDRESS:'받는 지갑 주소를 확인해 주세요.',INVALID_AMOUNT:'송금할 금액을 확인해 주세요.',ACCOUNT_CHANGED:'지갑 계정이 바뀌었어요.',WRONG_CHAIN:'Mustree 네트워크로 다시 연결해 주세요.',INSUFFICIENT_BALANCE:'가스비를 포함한 잔액이 부족해요.',TRANSACTION_FAILED:'송금이 완료되지 않았어요.',RECEIPT_TIMEOUT:'확인이 지연되고 있어요. 다시 송금하지 말고 거래 내역을 확인해 주세요.'})[code]||'처리하지 못했어요. 다시 시도해 주세요.';}
-function historyHtml(){if(state.historyLoading)return'<p class="store-empty">거래 내역을 불러오고 있어요.</p>';if(!state.history.length)return'<p class="store-empty">아직 거래 내역이 없어요.</p>';return`<div class="store-history-list">${state.history.map(item=>`<div class="store-history-row"><time>${new Date(item.timestamp*1000).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</time><strong class="${item.direction}">${item.direction==='in'?'+':'−'}${formattedWei(item.valueWei)}</strong><span>${formattedWei(item.balanceWei)}</span></div>`).join('')}</div>`;}
-function render(){revenueNode.hidden=!state.account&&!preview;revenueNode.querySelector('span').textContent=visibleBalance();
- if(state.step==='connect'){screen.innerHTML=`<div class="operator-hero"><span class="operator-kicker">STORE</span><h1>가게 지갑을<br>연결해 주세요.</h1><p>결제 QR과 잔액, 송금을 한 화면에서 관리합니다.</p>${state.status?`<p class="operator-alert">${esc(state.status)}</p>`:''}</div>${button('가게 지갑 연결하기','connect')}`;return;}
- if(state.step==='sending'){screen.innerHTML=`<div class="operator-center"><span class="operator-spinner"></span><h1>${state.hash?'송금을 확인하고 있어요.':'MetaMask에서 확인을 눌러주세요.'}</h1><p>${state.status||'같은 송금을 다시 요청하지 마세요.'}</p>${state.hash?`<code>${state.hash}</code>`:''}</div>`;return;}
- if(state.step==='success'){screen.innerHTML=`<div class="operator-success"><div class="success-mark">✓</div><span>송금 완료</span><h1>${esc(state.amount)} MST</h1><p>${short(state.recipient)} 지갑으로 보냈어요.</p><code>${state.hash}</code></div>${button('운영 화면으로','done')}`;return;}
- screen.innerHTML=`<div class="store-name-row"><label for="storeName">가게 이름 <small>(선택)</small></label><div><input id="storeName" maxlength="30" value="${esc(state.name)}" placeholder="예: 사랑 분식"><button type="button" data-store="save-name">저장</button></div></div><section class="store-card"><div class="store-card-title"><span>결제 QR</span><strong>${esc(state.name||'우리 가게')}</strong></div><div id="storeQr" class="live-qr"></div></section><section class="store-history"><h2>최근 거래</h2><div class="store-history-head"><span>시간</span><span>금액</span><span>잔액</span></div>${historyHtml()}</section>`;
- const qr=document.getElementById('storeQr'),link=qrLink();if(qr&&link&&typeof QRCode==='function')new QRCode(qr,{text:link,width:210,height:210,colorDark:'#233d35',colorLight:'#fff',correctLevel:QRCode.CorrectLevel.M});else if(qr)qr.innerHTML='<div class="qr-skeleton-content"><span></span><strong>QR 준비 중</strong><small>지갑이 연결되면 표시됩니다</small></div>';}
-function set(next){state={...state,...next};render();}
-async function loadHistory(){if(state.historyLoading)return;if(preview){set({history:[{timestamp:Date.now()/1000-180,direction:'in',valueWei:55n*10n**18n,balanceWei:1255n*10n**17n},{timestamp:Date.now()/1000-720,direction:'out',valueWei:10n*10n**18n,balanceWei:705n*10n**17n}]});return;}if(!state.account)return;state.historyLoading=true;render();try{const history=await Store.recentTransfers(window.fetch.bind(window),{account:state.account,rpcUrl:Wallet.NETWORK.rpcUrls[0]});set({history,historyLoading:false});}catch{set({historyLoading:false});}}
-function onWallet(s){if(s.status==='ready'){const first=!state.account;set({step:'dashboard',account:s.account,balanceWei:s.balanceWei,status:''});if(first)void loadHistory();}else if(['connecting','adding','switching','pending','querying'].includes(s.status))set({status:s.status==='querying'?'잔액을 확인하고 있어요.':'MetaMask에서 확인을 눌러주세요.'});else if(s.status==='cancelled')set({status:'연결이 취소됐어요.'});else if(s.status==='unavailable')set({status:'MetaMask 앱 안에서 열어주세요.'});else if(s.status!=='idle')set({status:'지갑을 연결하지 못했어요.'});}
-async function connect(){if(preview){set({step:'dashboard',account:null,balanceWei:(125500000005000000000n).toString()});void loadHistory();return;}provider=provider||await discovery.getProvider();if(!provider){location.assign('https://link.metamask.io/dapp/bazaar.mustree.kr/store.html');return;}await controller.setup();}
-function scanImage(source){const context=canvas.getContext('2d',{willReadFrequently:true});canvas.width=source.videoWidth||source.naturalWidth;canvas.height=source.videoHeight||source.naturalHeight;context.drawImage(source,0,0,canvas.width,canvas.height);const image=context.getImageData(0,0,canvas.width,canvas.height);return jsQR(image.data,image.width,image.height,{inversionAttempts:'dontInvert'})?.data||null;}
-function stopScan(){if(frame)cancelAnimationFrame(frame);frame=null;stream?.getTracks().forEach(track=>track.stop());stream=null;video.srcObject=null;scanner.hidden=true;}
-function accept(raw){const recipient=Store.parseRecipient(raw,location.origin);if(!recipient){set({status:'올바른 지갑 QR이 아니에요.'});return false;}stopScan();set({recipient,manual:false,status:''});return true;}
-function scanLoop(){if(!stream)return;if(video.readyState>=2){try{const data=scanImage(video);if(data&&accept(data))return;}catch{}}frame=requestAnimationFrame(scanLoop);}
-async function startScan(){if(preview){set({manual:true,recipient:'',status:'미리보기에서는 실제 QR을 생성하거나 인식하지 않습니다.'});return;}try{stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'}}});video.srcObject=stream;scanner.hidden=false;await video.play();scanLoop();}catch{set({status:'카메라 권한을 허용해 주세요.'});}}
-async function send(){if(busy)return;const recipient=Store.parseRecipient(state.recipient,location.origin);busy=true;set({step:'sending',status:'',hash:null});try{if(preview){await new Promise(r=>setTimeout(r,400));set({step:'success',recipient,hash:'0x'+'b'.repeat(64)});return;}provider=provider||await discovery.getProvider();const prepared=await Store.prepare(provider,{account:state.account,recipient,amount:state.amount,chainId:Wallet.NETWORK.chainId});const hash=await provider.request({method:'eth_sendTransaction',params:[prepared.transaction]});set({hash});await Payment.waitForReceipt(provider,hash);set({step:'success',hash});await controller.refresh();}catch(error){set({step:'dashboard',status:errorText(error?.code)});}finally{busy=false;}}
-function click(event){const target=event.target.closest('[data-store]');if(!target||target.disabled)return;const action=target.dataset.store;if(action==='connect')void connect();else if(action==='save-name'){state.name=document.getElementById('storeName').value.trim().slice(0,30);localStorage.setItem('bazaar-store-name',state.name);render();}else if(action==='scan')void startScan();else if(action==='manual')set({manual:true,recipient:'',status:''});else if(action==='change-recipient')set({recipient:'',manual:false,status:''});else if(action==='send')void send();else if(action==='done'){set({step:'dashboard',recipient:'',manual:false,amount:'',status:'',hash:null});void loadHistory();}}
-function init(){discovery=Wallet.discover(window);controller=Wallet.createWallet({getProvider:()=>discovery.getProvider(),onState:onWallet,readBalanceFromRpc:Wallet.createRpcBalanceReader({fetchImpl:window.fetch.bind(window)})});screen.addEventListener('click',click);screen.addEventListener('input',event=>{if(event.target.id==='storeRecipient')state.recipient=event.target.value;if(event.target.id==='storeAmount'){state.amount=event.target.value.replace(/[^0-9.]/g,'');event.target.value=state.amount;}const sendButton=screen.querySelector('[data-store="send"]');if(sendButton)sendButton.disabled=!Store.parseRecipient(state.recipient,location.origin)||!state.amount;});document.getElementById('storeScannerClose').onclick=stopScan;window.addEventListener('pagehide',()=>{stopScan();controller.dispose();discovery.dispose();});render();if(preview)void connect();else void controller.restore();}
-init();
+(function () {
+  'use strict';
+  const Wallet = window.BazaarWallet, Transfer = window.BazaarTransfer, UI = window.BazaarUI;
+  const screen = document.getElementById('storeScreen'), balanceNode = document.getElementById('storeBalance');
+  const preview = new URL(location.href).searchParams.has('preview');
+  let discovery, controller, disposed = false;
+  let state = { account:null, balanceWei:null, name:localStorage.getItem('bazaar-store-name') || '', status:'' };
+  const history = window.BazaarHistory.create({
+    query:account => preview ? Promise.resolve([
+      { timestamp:Date.now()/1000-180, direction:'in', valueWei:55n*10n**18n, balanceWei:1255n*10n**17n },
+      { timestamp:Date.now()/1000-720, direction:'out', valueWei:10n*10n**18n, balanceWei:705n*10n**17n }
+    ]) : window.BazaarHistory.recentTransfers(window.fetch.bind(window), { account, rpcUrl:Wallet.NETWORK.rpcUrls[0], blockWindow:1200, limit:20 }),
+    onChange:render
+  });
+  function render() {
+    if (disposed) return;
+    balanceNode.hidden = !state.account;
+    balanceNode.querySelector('span').textContent = UI.mst(state.balanceWei);
+    if (!state.account) {
+      screen.innerHTML = `<div class="operator-hero"><h1>가게 지갑을<br>연결해 주세요.</h1><p>받기 QR과 잔액, 거래 내역을 확인합니다.</p>${UI.alert(state.status)}</div><button class="operator-primary" data-store="connect" type="button">가게 지갑 연결하기</button>`;
+      return;
+    }
+    screen.innerHTML = `<div class="store-name-row"><label for="storeName">가게 이름 <small>(선택)</small></label><div><input id="storeName" maxlength="30" value="${UI.esc(state.name)}" placeholder="예: 사랑 분식"><button type="button" data-store="save-name">저장</button></div></div><section class="store-card"><div class="store-card-title"><span>받기 QR</span><strong>${UI.esc(state.name || '우리 가게')}</strong></div>${UI.qrMarkup('storeQr', '가게 받기 QR')}</section><a class="operator-secondary pay-link-button" href="/pay.html?mode=transfer${preview ? '&preview=1' : ''}">송금하기</a>${UI.history(history.snapshot())}${UI.alert(state.status)}`;
+    UI.renderQr(document.getElementById('storeQr'), Transfer.paymentLink(state.account, state.name), { preview });
+  }
+  function set(next) { state = { ...state, ...next }; render(); }
+  function onWallet(snapshot) {
+    if (snapshot.status === 'ready') {
+      set({ account:snapshot.account, balanceWei:snapshot.balanceWei, status:'' });
+      void history.load(snapshot.account);
+    } else if (['connecting','adding','switching','pending','querying'].includes(snapshot.status)) {
+      set({ status:snapshot.status === 'querying' ? '잔액을 확인하고 있어요.' : 'MetaMask에서 확인을 눌러주세요.' });
+    } else {
+      history.clear();
+      set({ account:null, balanceWei:null, status:snapshot.status === 'idle' ? '' : snapshot.status === 'cancelled' ? '연결이 취소됐어요.' : '가게 지갑을 다시 연결해 주세요.' });
+    }
+  }
+  async function connect() {
+    const provider = await discovery.getProvider();
+    if (!provider) { location.assign('https://link.metamask.io/dapp/bazaar.mustree.kr/store.html'); return; }
+    await controller.setup();
+  }
+  screen.addEventListener('click', event => {
+    if (event.target.closest('[data-history-refresh]')) { if (state.account) void history.load(state.account); return; }
+    const target = event.target.closest('[data-store]');
+    if (!target || target.disabled) return;
+    if (target.dataset.store === 'connect') void connect();
+    else if (target.dataset.store === 'save-name') {
+      state.name = document.getElementById('storeName').value.trim().slice(0, 30);
+      localStorage.setItem('bazaar-store-name', state.name); render();
+    }
+  });
+  const refresh = () => { if (!preview && document.visibilityState === 'visible') void controller.refresh(); };
+  balanceNode.addEventListener('click', refresh);
+  window.addEventListener('focus', refresh); document.addEventListener('visibilitychange', refresh);
+  window.addEventListener('pagehide', event => { if (!event.persisted) { disposed = true; controller?.dispose(); discovery?.dispose(); history.clear(); } });
+  if (preview) {
+    state.account = '0x' + '1'.repeat(40); state.balanceWei = '125500000005000000000';
+    void history.load(state.account);
+  } else {
+    discovery = Wallet.discover(window);
+    controller = Wallet.createWallet({ getProvider:() => discovery.getProvider(), onState:onWallet, readBalanceFromRpc:Wallet.createRpcBalanceReader({ fetchImpl:window.fetch.bind(window) }) });
+    void controller.restore();
+  }
+  render();
 })();

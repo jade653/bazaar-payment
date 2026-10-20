@@ -25,11 +25,6 @@
     }
     return error && error.code;
   }
-  function units(wei) {
-    const n = BigInt(wei), divisor = 10n ** 18n;
-    const fraction = (n % divisor).toString().padStart(18, '0').replace(/0+$/, '');
-    return (n / divisor).toString() + (fraction ? '.' + fraction : '');
-  }
   function failure(code) { return Object.assign(new Error(code), { code }); }
   function createRpcBalanceReader({ fetchImpl, network = NETWORK, timeout = 8000 }) {
     return async function readRpcBalance(account) {
@@ -238,5 +233,5 @@
       dispose() { disposed = true; generation++; clearTimeout(eventTimer); unbind(); }
     };
   }
-  return { NETWORK, createWallet, createRpcBalanceReader, discover, units, sameChain, errorCode };
+  return { NETWORK, createWallet, createRpcBalanceReader, discover };
 });

@@ -5,15 +5,17 @@ const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 const vm = require('node:vm');
+const UI = require('../payment-ui.js');
+const History = require('../transaction-history.js');
 
-function liveHarness() {
+function liveHarness({ query = async () => [], hash = '#welcome' } = {}) {
   const listeners = {};
   const screen = { innerHTML: '', addEventListener(type, handler) { listeners[type] = handler; } };
   const qrNode = {};
   const footer = {};
   const pill = {};
   const assigned = [];
-  const location = { href: 'https://bazaar.mustree.kr/#welcome', hash: '#welcome', assign(value) { assigned.push(String(value)); } };
+  const location = { href: 'https://bazaar.mustree.kr/' + hash, hash, assign(value) { assigned.push(String(value)); } };
   const historyCalls = [];
   let backCount = 0;
   const setLocation = value => {
@@ -37,16 +39,17 @@ function liveHarness() {
   function QRCode(_target, options) { qrOptions = options; }
   QRCode.CorrectLevel = { M: 0 };
   const Wallet = {
+    NETWORK:{ rpcUrls:['https://rpc.test'] },
     createRpcBalanceReader() { return async () => '0x0'; },
     discover() { return { getProvider() {}, dispose() {} }; },
     createWallet({ onState }) { walletState = onState; return { setup() {}, refresh() {}, restore() {}, dispose() {} }; },
   };
-  const Store = { recentTransfers: async () => [] };
+
   const window = { document, location, history, QRCode, fetch: async () => ({ ok: true, json: async () => ({ result: '0x0' }) }), addEventListener(type, handler) { listeners[type] = handler; } };
   const context = { window, document, location, history, QRCode, URL, navigator: {}, setTimeout, clearTimeout, Promise, console };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '..', 'live.js'), 'utf8'), context);
-  window.BazaarLive.create({ Wallet, Store, illustration: () => '' }).init();
-  const click = action => listeners.click({ target: { closest: () => ({ disabled: false, dataset: { live: action } }) } });
+  window.BazaarLive.create({ Wallet, UI, History:{ ...History, recentTransfers:query }, illustration: () => '' }).init();
+  const click = action => listeners.click({ target: { closest: selector => selector === '[data-live]' ? ({ disabled: false, dataset: { live: action } }) : null } });
   return { screen, location, historyCalls, listeners, click, state: value => walletState(value), qr: () => qrOptions, backCount: () => backCount, assigned };
 }
 
@@ -106,4 +109,16 @@ test('MetaMask handoff uses a simple start path and store payment opens its scan
   assert.match(payment.screen.innerHTML, /가게 결제하기/);
   payment.click('pay');
   assert.equal(payment.assigned.at(-1), '/pay.html?scan=1');
+});
+
+test('wallet ready refreshes the shared history and honors a top-up deep link', async () => {
+  let calls = 0;
+  const app = liveHarness({ hash:'#receive', query:async () => { calls++; return []; } });
+  const snapshot = { status:'ready', account:'0x' + '1'.repeat(40), balanceWei:'0' };
+  app.state(snapshot);
+  await new Promise(setImmediate);
+  assert.match(app.screen.innerHTML, /현금 결제 후 직원에게/);
+  app.state({ ...snapshot, balanceWei:'1000000000000000000' });
+  await new Promise(setImmediate);
+  assert.equal(calls, 2);
 });

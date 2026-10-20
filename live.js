@@ -14,7 +14,7 @@
     let forceHistory = false;
     const transferHistory = History.create({
       chainId:Wallet.NETWORK.chainId, limit:5,
-      query:(account, options) => History.recentTransfers(root.fetch.bind(root), { account, rpcUrl:Wallet.NETWORK.rpcUrls[0], blockWindow:1200, limit:5, ...options }),
+      query:(account, options) => History.recentTransfers(root.fetch.bind(root), { account, rpcUrl:Wallet.NETWORK.rpcUrls[0], ...options }),
       onChange:() => { if (view === 'home') paint(); }
     });
     const button = (text, action, secondary = false) => `<button type="button" class="${secondary ? 'secondary' : 'primary'}" data-live="${action}">${text}</button>`;
@@ -123,7 +123,6 @@
     }
     function init() {
       document.querySelector('.app-footer').textContent = 'MST 파운데이션 달란트';
-      document.querySelector('.event-pill').hidden = true;
       discovery = Wallet.discover(window);
       const readBalanceFromRpc = Wallet.createRpcBalanceReader({ fetchImpl: window.fetch.bind(window) });
       controller = Wallet.createWallet({ getProvider: () => discovery.getProvider(), onState, readBalanceFromRpc });

@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@v6
       - name: Check JavaScript
         run: |
-          for file in *.js; do node --check "$file"; done
+          for file in *.js tools/*.cjs; do node --check "$file"; done
           node --test "tests/*.test.cjs"
       - uses: actions/configure-pages@v5
       - name: Prepare static files

@@ -8,7 +8,7 @@
   const HASH = /^0x[0-9a-f]{64}$/i;
   const SYNC_INTERVAL = 60000;
   // Keep an 8s HTTP budget to allow extra headroom for mobile latency.
-  // Reproduce with tools/measure-rpc.cjs; measurements/rpc-latency.json records the sample.
+  // Reproduce latency samples with tools/measure-rpc.cjs.
   const RPC_TIMEOUT = 8000;
   const sentKey = (chainId, account) => 'bazaar-sent-v1:' + chainId + ':' + account.toLowerCase();
   function getStorage(storage) {
@@ -27,7 +27,7 @@
     try { getStorage(storage)?.setItem(sentKey(chainId, account), JSON.stringify(rows.slice(-200))); } catch {}
   }
   const failure = code => Object.assign(new Error(code), { code });
-  async function recentTransfers(fetchImpl, { account, rpcUrl, blockWindow = 600, limit = 20, fromBlock, sync = false, sent = [], requestTimeout = RPC_TIMEOUT }) {
+  async function recentTransfers(fetchImpl, { account, rpcUrl, blockWindow = 1200, fromBlock, sent = [], requestTimeout = RPC_TIMEOUT }) {
     if (typeof fetchImpl !== 'function' || !ADDRESS.test(account || '')) throw failure('INVALID_ADDRESS');
     let nextId = 1;
     async function batch(calls, optional = false) {
@@ -63,8 +63,7 @@
     // A cursor is committed only after the entire requested range succeeds.
     const lower = Number.isSafeInteger(fromBlock) && fromBlock <= latest + 1 ? Math.max(0, fromBlock) : Math.max(0, latest - blockWindow + 1);
     const found = [], settledHashes = [];
-    const readLimit = sync ? Infinity : limit;
-    for (let high = latest; high >= lower && found.length < readLimit; high -= 100) {
+    for (let high = latest; high >= lower; high -= 100) {
       const low = Math.max(lower, high - 99), calls = [];
       for (let number = high; number >= low; number--) calls.push({method:'eth_getBlockByNumber',params:['0x'+number.toString(16),true]});
       const blocks = await batch(calls);
@@ -76,7 +75,7 @@
       }
       if (!candidates.length) continue;
       const receipts = await batch(candidates.map(item => ({method:'eth_getTransactionReceipt',params:[item.hash]})));
-      for (let index = 0; index < candidates.length && found.length < readLimit; index++) {
+      for (let index = 0; index < candidates.length; index++) {
         if (['0x1','0x01',1].includes(receipts[index].status)) found.push(candidates[index]);
       }
     }
@@ -96,7 +95,6 @@
     try { balances = found.length ? await batch(found.map(item => ({method:'eth_getBalance',params:[account,item.blockNumber]})), true) : []; }
     catch { balances = []; }
     const items = found.map((item,index) => ({...item,balanceWei:/^0x[0-9a-f]+$/i.test(balances[index] || '') ? BigInt(balances[index]) : null}));
-    if (!sync) return items;
     // Pin the comparison balance to the same block as the completed scan.
     const [balance] = await batch([{method:'eth_getBalance',params:[account,latestHex]}]);
     if (!/^0x[0-9a-f]+$/i.test(balance)) throw failure('HISTORY_UNAVAILABLE');
@@ -154,9 +152,6 @@
         return Array.isArray(items) ? merge(items) : [];
       } catch { return []; }
     }
-    function save(account, items) {
-      try { storage?.setItem(storageKey(account), JSON.stringify(items, (_key,value) => typeof value === 'bigint' ? value.toString() : value)); } catch {}
-    }
     const publish = next => { state = { ...state, ...next }; onChange({ ...state }); };
     function clear() { revision++; active = null; publish({ account:null, items:[], loading:false, error:'' }); }
     function load(account, { balanceWei, force = false } = {}) {
@@ -178,26 +173,23 @@
         publish({account:key,items:merge(state.account === key ? state.items : [],cached).slice(0,limit),loading:false,error:''});
         return Promise.resolve();
       }
-      publish({ account:key, items:changed ? cached.slice(0,limit) : storage ? merge(state.items,cached).slice(0,limit) : state.items, loading:true, error:hadError ? errorMessage : '' });
+      publish({ account:key, items:merge(changed ? [] : state.items,cached).slice(0,limit), loading:true, error:hadError ? errorMessage : '' });
       activeBalance = balanceWei; activeForce = force;
       active = Promise.resolve().then(async () => {
         // One silent retry; a superseded account must never start another request.
         for (let attempt = 0; attempt < 2; attempt++) {
           if (request !== revision) return;
-          try { return await query(account, { fromBlock:validCursor ? meta.lastScannedBlock + 1 : undefined, sync:true, sent }); }
+          try { return await query(account, { fromBlock:validCursor ? meta.lastScannedBlock + 1 : undefined, sent }); }
           catch (error) { if (attempt === 1) throw error; }
         }
       }).then(result => {
         if (request !== revision) return;
-        const items = Array.isArray(result) ? result : result.items;
-        const merged = storage || !Array.isArray(result) ? merge(items, state.items, read(key)) : items;
-        if (Array.isArray(result)) save(key, merged);
-        if (!Array.isArray(result) && Number.isSafeInteger(result.lastScannedBlock)) {
-          // The cursor and the items it describes must survive storage failures together.
-          const next = {items:merged,lastScannedBlock:result.lastScannedBlock,balanceWei:result.balanceWei,checkedAt:now(),settledHashes:[...new Set([...(meta.settledHashes || []),...(result.settledHashes || [])])].slice(-200)};
-          metadata.set(key,next);
-          try { storage?.setItem(syncKey(key),JSON.stringify(next, (_key,value) => typeof value === 'bigint' ? value.toString() : value)); } catch {}
-        }
+        if (!Array.isArray(result.items) || !Number.isSafeInteger(result.lastScannedBlock) || result.lastScannedBlock < 0 || !/^\d+$/.test(result.balanceWei)) throw failure('HISTORY_UNAVAILABLE');
+        const merged = merge(result.items, state.items, read(key));
+        // The cursor and the items it describes must survive storage failures together.
+        const next = {items:merged,lastScannedBlock:result.lastScannedBlock,balanceWei:result.balanceWei,checkedAt:now(),settledHashes:[...new Set([...(meta.settledHashes || []),...(result.settledHashes || [])])].slice(-200)};
+        metadata.set(key,next);
+        try { storage?.setItem(syncKey(key),JSON.stringify(next, (_key,value) => typeof value === 'bigint' ? value.toString() : value)); } catch {}
         markFailed(key, false);
         publish({ items:merged.slice(0,limit), loading:false, error:'' });
       }).catch(() => {

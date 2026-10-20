@@ -8,7 +8,7 @@ const vm = require('node:vm');
 const UI = require('../payment-ui.js');
 const History = require('../transaction-history.js');
 
-function liveHarness({ query = async () => [], hash = '#welcome', provider = null, storage } = {}) {
+function liveHarness({ query = async () => ({items:[],lastScannedBlock:0,balanceWei:'0'}), hash = '#welcome', provider = null, storage } = {}) {
   const listeners = {};
   const screen = { innerHTML: '', addEventListener(type, handler) { listeners[type] = handler; } };
   const qrNode = {};
@@ -130,7 +130,7 @@ for (const route of ['button','back','direct']) {
     }};
     const app=liveHarness({provider,hash:route==='direct'?'#receive':'#home',query:async()=>{
       historyReads++;
-      return historyReads===1?[]:[{timestamp:1,direction:'in',valueWei:'5500000000000000000',balanceWei:'6500000000000000000'}];
+      return {items:historyReads===1?[]:[{hash:'0x'+'a'.repeat(64),blockNumber:'0x1',timestamp:Math.floor(Date.now()/1000),direction:'in',valueWei:'5500000000000000000',balanceWei:'6500000000000000000'}],lastScannedBlock:historyReads,balanceWei:historyReads===1?'1000000000000000000':'6500000000000000000'};
     }});
     t.after(app.dispose);
     await new Promise(setImmediate);
@@ -219,7 +219,7 @@ test('continuing after missing-wallet detection opens the app synchronously in t
 
 test('wallet ready refreshes the shared history and honors a top-up deep link', async () => {
   let calls = 0;
-  const app = liveHarness({ hash:'#receive', query:async () => { calls++; return []; } });
+  const app = liveHarness({ hash:'#receive', query:async () => { calls++; return {items:[],lastScannedBlock:calls,balanceWei:'0'}; } });
   const snapshot = { status:'ready', account:'0x' + '1'.repeat(40), balanceWei:'0' };
   app.state(snapshot);
   await new Promise(setImmediate);

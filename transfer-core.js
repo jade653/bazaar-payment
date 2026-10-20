@@ -20,8 +20,7 @@
         url = new URL('https://' + url.pathname.slice('/dapp/'.length) + url.search);
       }
       if (!['http:', 'https:'].includes(url.protocol) || !['bazaar.mustree.kr', 'localhost', '127.0.0.1'].includes(url.hostname)) return null;
-      const recipient = url.pathname.match(/^\/pay\/(0x[0-9a-f]{40})(?:\/\d+)?\/?$/i)?.[1]
-        || (['/pay.html', '/operator.html'].includes(url.pathname) ? address(url.searchParams.get('to')) : null);
+      const recipient = ['/pay.html', '/operator.html'].includes(url.pathname) ? address(url.searchParams.get('to')) : null;
       return recipient ? { address:recipient, name:(url.searchParams.get('name') || '').trim().slice(0, 30) } : null;
     } catch { return null; }
   }

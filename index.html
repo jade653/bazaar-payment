@@ -6,51 +6,27 @@
   <meta name="theme-color" content="#f7f8f4">
   <title>MST 파운데이션 달란트</title>
   <link rel="icon" href="assets/talent-mark.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="styles.css?v=20261020-31">
+  <link rel="stylesheet" href="styles.css?v=20261020-37">
   <script src="art.js?v=20261020-4" defer></script>
   <script src="wallet.js?v=20261020-35" defer></script>
-  <script src="transfer-core.js?v=20261020-28" defer></script>
+  <script src="transfer-core.js?v=20261020-36" defer></script>
   <script src="payment-ui.js?v=20261020-33" defer></script>
-  <script src="transaction-history.js?v=20261020-35" defer></script>
+  <script src="transaction-history.js?v=20261020-37" defer></script>
   <script src="vendor/qrcode.min.js?v=20261020-4" defer></script>
-  <script src="live.js?v=20261020-32" defer></script>
-  <script src="vendor/jsQR.min.js?v=20261020-4" defer></script>
-  <script src="qr-scanner.js?v=20261020-18" defer></script>
-  <script src="app.js?v=20261020-29" defer></script>
+  <script src="live.js?v=20261020-37" defer></script>
+  <script src="app.js?v=20261020-37" defer></script>
 </head>
 <body>
-  <div class="workspace">
-    <aside class="sidebar" aria-label="미리보기 설정">
-      <a class="studio-brand" href="#home"><img class="brand-mark" src="assets/talent-mark.svg" alt=""><span>MST 파운데이션 달란트<small>UI PREVIEW</small></span></a>
-      <div class="sidebar-intro"><h1>충전하고,<br>바로 사용하세요.</h1></div>
-      <div class="scenario-picker"><label for="stateSelect">미리볼 화면</label><select id="stateSelect"></select></div>
-      <nav id="stateNav" class="state-nav" aria-label="상태별 화면"></nav>
-      <details class="test-options"><summary>다른 상황 테스트</summary><div id="extraStates"></div></details>
-      <div class="sidebar-footer"><span class="green-dot"></span> 로컬 프로토타입 · 실제 거래 없음</div>
-    </aside>
-    <main class="canvas">
-      <header class="canvas-header"><div><span class="eyebrow">COMMUNITY BAZAAR</span><h2>화면 테스트</h2></div><button id="resetButton" class="text-button" type="button">처음부터 보기 <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.34 5.66M20 5v6h-6"/></svg></button></header>
+  <main class="workspace">
+    <div class="canvas">
       <div class="preview-layout">
         <section class="device" aria-label="바자회 서비스 화면">
-          <header class="app-header"><a class="app-brand" href="#home" aria-label="홈으로 이동"><img class="brand-mark small" src="assets/talent-mark.svg" alt="">MST 파운데이션 달란트</a><span class="event-pill">화면 시안</span></header>
+          <header class="app-header"><a class="app-brand" href="#home" aria-label="홈으로 이동"><img class="brand-mark small" src="assets/talent-mark.svg" alt="">MST 파운데이션 달란트</a></header>
           <div id="appScreen" class="app-screen" aria-live="polite"></div>
-          <footer class="app-footer">화면 시안 <span>·</span> 실제 충전·결제는 진행되지 않습니다</footer>
+          <footer class="app-footer">MST 파운데이션 달란트</footer>
         </section>
-        <aside class="inspector" aria-label="선택한 화면 설명">
-          <div class="preview-badge"><span></span> INTERACTIVE PREVIEW</div>
-          <h3 id="stateTitle"></h3><p id="stateDescription"></p>
-          <div id="approvalControls" class="approval-controls" hidden>
-            <p>MetaMask 동작 재현</p>
-            <button id="approveDemo" class="flow-button" type="button">Confirm 누름</button>
-            <button id="cancelDemo" class="flow-button" type="button">취소함</button>
-            <button id="missingDemo" class="flow-button" type="button">확인 창이 뜨지 않음</button>
-          </div>
-          <div class="step-controls"><button id="previousState" type="button" aria-label="이전 상태"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button><span id="stateCounter"></span><button id="nextState" type="button" aria-label="다음 상태"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button></div>
-          <button id="continueFlow" class="flow-button" type="button">다음 단계로 보기</button>
-          <p class="inspector-footnote">실제 화면에 예시 데이터를 표시합니다.</p>
-        </aside>
       </div>
-    </main>
-  </div>
+    </div>
+  </main>
 </body>
 </html>

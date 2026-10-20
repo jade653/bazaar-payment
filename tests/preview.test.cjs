@@ -18,7 +18,7 @@ function harness() {
     document:{ body:{ classList:{ toggle(){} } }, getElementById:node, createElement:() => node(Symbol()), querySelectorAll:() => [], addEventListener(type,handler){ events['document:' + type] = handler; } },
     window:{ addEventListener(){} }
   };
-  vm.runInNewContext(fs.readFileSync(require.resolve('../app.js'),'utf8'), context);
+  vm.runInNewContext(fs.readFileSync(require.resolve('../preview.js'),'utf8'), context);
   const click = dataset => events['document:click']({ target:{ closest:() => ({ disabled:false, dataset }) } });
   const amount = value => events['appScreen:input']({ target:{ id:'transferAmount', value:String(value), selectionStart:String(value).length } });
   return { click, amount, scan:raw=>scannerOptions.onAccept(raw), scanExample:()=>scannerOptions.onPreview(), next:() => events['continueFlow:click'](), location, screen:node('appScreen'), cancel:() => events['cancelDemo:click'](), missing:() => events['missingDemo:click']() };

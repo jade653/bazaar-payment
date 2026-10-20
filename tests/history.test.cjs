@@ -5,31 +5,33 @@ const History = require('../transaction-history.js');
 const UI = require('../payment-ui.js');
 const a = '0x' + '1'.repeat(40), b = '0x' + '2'.repeat(40);
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
+const result = (items = []) => ({items,lastScannedBlock:1,balanceWei:'0',settledHashes:[]});
+const timestamp = () => Math.floor(Date.now()/1000);
 
 test('a balance refresh can reload history for the same account', async () => {
   let calls = 0;
-  const history = History.create({ query:async () => [++calls] });
+  const history = History.create({ query:async () => result([row(++calls,timestamp())]) });
   await history.load(a); await history.load(a);
   assert.equal(calls, 2);
-  assert.deepEqual(history.snapshot().items, [2]);
+  assert.deepEqual(history.snapshot().items.map(item => item.hash).sort(), [row(1,timestamp()).hash,row(2,timestamp()).hash]);
 });
 test('late responses cannot expose the previous account history', async () => {
   const first = deferred(), second = deferred();
   const history = History.create({ query:account => account === a ? first.promise : second.promise });
   const pendingA = history.load(a), pendingB = history.load(b);
-  second.resolve(['B']); await pendingB;
-  first.resolve(['A']); await pendingA;
+  second.resolve(result([row(2,timestamp())])); await pendingB;
+  first.resolve(result([row(1,timestamp())])); await pendingA;
   assert.equal(history.snapshot().account, b);
-  assert.deepEqual(history.snapshot().items, ['B']);
+  assert.equal(history.snapshot().items[0].hash,row(2,timestamp()).hash);
 });
 test('disconnect clears history and invalidates in-flight responses', async () => {
   const response = deferred(), history = History.create({ query:() => response.promise });
-  const task = history.load(a); history.clear(); response.resolve(['old']); await task;
+  const task = history.load(a); history.clear(); response.resolve(result([row(1,timestamp())])); await task;
   assert.deepEqual(history.snapshot(), { account:null, items:[], loading:false, error:'' });
 });
 test('history failure is distinct from empty history and remains retryable', async () => {
   let failed = true;
-  const history = History.create({ query:async () => { if (failed) throw new Error('RPC'); return []; } });
+  const history = History.create({ query:async () => { if (failed) throw new Error('RPC'); return result(); } });
   await history.load(a);
   assert.match(UI.history(history.snapshot()), /불러오지 못했어요/);
   assert.doesNotMatch(UI.history(history.snapshot()), /아직 거래 내역이 없어요/);
@@ -38,22 +40,22 @@ test('history failure is distinct from empty history and remains retryable', asy
   assert.match(UI.history(history.snapshot()), /아직 거래 내역이 없어요/);
 });
 
-test('RPC history respects the row limit and does not turn missing balances into zero', async () => {
+test('RPC history keeps transactions when historical balances are missing', async () => {
   let missing = false;
   const fetchImpl = async (_url, { body }) => ({ ok:true, json:async () => JSON.parse(body).map(call => ({
     id:call.id, result:call.method === 'eth_blockNumber' ? '0x2'
       : call.method === 'eth_getBlockByNumber' ? { number:call.params[0], timestamp:'0x1', transactions:[{ hash:call.params[0], from:a, to:b, value:'0x1' }] }
-      : call.method === 'eth_getTransactionReceipt' ? {status:'0x1'} : missing ? null : '0x5'
+      : call.method === 'eth_getTransactionReceipt' ? {status:'0x1'} : missing && JSON.parse(body).length === 2 ? null : '0x5'
   })) });
-  const result = await History.recentTransfers(fetchImpl, { account:a, rpcUrl:'mock', blockWindow:2, limit:1 });
-  assert.equal(result.length, 1);
-  assert.equal(result[0].balanceWei, 5n);
+  const loaded = await History.recentTransfers(fetchImpl, { account:a, rpcUrl:'mock', blockWindow:2 });
+  assert.equal(loaded.items.length, 2);
+  assert.equal(loaded.items[0].balanceWei, 5n);
   missing = true;
-  const unavailable = await History.recentTransfers(fetchImpl, { account:a, rpcUrl:'mock', blockWindow:2, limit:1 });
-  assert.equal(unavailable.length,1);
-  assert.equal(unavailable[0].balanceWei,null);
-  assert.match(UI.history({items:unavailable}), /<span>—<\/span>/);
-  assert.doesNotMatch(UI.history({items:unavailable}), /불러오지 못했어요/);
+  const unavailable = await History.recentTransfers(fetchImpl, { account:a, rpcUrl:'mock', blockWindow:2 });
+  assert.equal(unavailable.items.length,2);
+  assert.equal(unavailable.items[0].balanceWei,null);
+  assert.match(UI.history(unavailable), /<span>—<\/span>/);
+  assert.doesNotMatch(UI.history(unavailable), /불러오지 못했어요/);
 });
 
 test('missing trie node on one historical balance keeps every confirmed transfer visible', async () => {
@@ -64,13 +66,13 @@ test('missing trie node on one historical balance keeps every confirmed transfer
       ?{number:call.params[0],timestamp:call.params[0],transactions:[{hash:hashes[Number(BigInt(call.params[0]))-1],from:a,to:b,value:'0x1'}]}
       :call.method==='eth_getTransactionReceipt'?{status:'0x1'}:'0x9'};
   })});
-  const items=await History.recentTransfers(fetchImpl,{account:b,rpcUrl:'mock',blockWindow:2});
+  const {items}=await History.recentTransfers(fetchImpl,{account:b,rpcUrl:'mock',blockWindow:2});
   assert.equal(items.length,2);
   assert.equal(items[0].balanceWei,9n);
   assert.equal(items[1].balanceWei,null);
 });
 
-test('reverted transactions do not occupy the history limit or get cached as money received', async () => {
+test('reverted transactions are excluded while the entire block range is scanned', async () => {
   let readBlocks=0;
   const failed='0x'+'a'.repeat(64), confirmed='0x'+'b'.repeat(64);
   const fetchImpl=async(_url,{body})=>({ok:true,json:async()=>JSON.parse(body).map(call=>{
@@ -84,7 +86,7 @@ test('reverted transactions do not occupy the history limit or get cached as mon
     else result='0x0';
     return {id:call.id,result};
   })});
-  const items=await History.recentTransfers(fetchImpl,{account:b,rpcUrl:'mock',blockWindow:101,limit:1});
+  const {items}=await History.recentTransfers(fetchImpl,{account:b,rpcUrl:'mock',blockWindow:101});
   assert.equal(readBlocks,101);
   assert.equal(items.length,1);
   assert.equal(items[0].hash,confirmed);
@@ -100,10 +102,10 @@ const row=(id,timestamp)=>({hash:'0x'+id.toString(16).padStart(64,'0'),blockNumb
 test('local history survives reload, stays visible during RPC loading/errors and merges without duplicates', async () => {
   const storage=memoryStorage(), now=()=>2000000000000, timestamp=now()/1000;
   const options={storage,chainId:'0x1db1',now,limit:5};
-  const original=History.create({...options,query:async()=>[row(1,timestamp-100)]});
+  const original=History.create({...options,query:async()=>result([row(1,timestamp-100)])});
   await original.load(a);
   assert.equal(storage.data.size,1);
-  assert.equal(typeof JSON.parse([...storage.data.values()][0])[0].valueWei,'string');
+  assert.equal(typeof JSON.parse([...storage.data.values()][0]).items[0].valueWei,'string');
   const pending=deferred();
   const reopened=History.create({...options,query:()=>pending.promise});
   const task=reopened.load(a);
@@ -111,7 +113,7 @@ test('local history survives reload, stays visible during RPC loading/errors and
   assert.equal(reopened.snapshot().items[0].valueWei,5500000000000000000n);
   assert.match(UI.history(reopened.snapshot()),/\+5\.5 MST/);
   assert.match(UI.history(reopened.snapshot()),/최근 내역을 확인/);
-  pending.resolve([row(2,timestamp),{...row(1,timestamp-100),balanceWei:null}]);
+  pending.resolve(result([row(2,timestamp),{...row(1,timestamp-100),balanceWei:null}]));
   await task;
   assert.deepEqual(reopened.snapshot().items.map(item=>item.hash),[row(2,timestamp).hash,row(1,timestamp).hash]);
   assert.equal(reopened.snapshot().items[1].balanceWei,6500000000000000000n);
@@ -125,27 +127,43 @@ test('local history survives reload, stays visible during RPC loading/errors and
 test('local history is isolated by account and chain, expires after 24 hours and stays bounded', async () => {
   const storage=memoryStorage(); let milliseconds=2000000000000;
   const options={storage,chainId:'0x1db1',now:()=>milliseconds,limit:5};
-  const history=History.create({...options,query:async()=>Array.from({length:205},(_,index)=>row(index+1,milliseconds/1000-index))});
+  const history=History.create({...options,query:async()=>result(Array.from({length:205},(_,index)=>row(index+1,milliseconds/1000-index)))});
   await history.load(a);
   assert.equal(history.snapshot().items.length,5);
-  assert.equal(JSON.parse([...storage.data.values()][0]).length,200);
-  const other=History.create({...options,query:async()=>[]});
+  assert.equal(JSON.parse([...storage.data.values()][0]).items.length,200);
+  const other=History.create({...options,query:async()=>result()});
   await other.load(b); assert.deepEqual(other.snapshot().items,[]);
-  const otherChain=History.create({...options,chainId:'0x1',query:async()=>[]});
+  const otherChain=History.create({...options,chainId:'0x1',query:async()=>result()});
   await otherChain.load(a); assert.deepEqual(otherChain.snapshot().items,[]);
   milliseconds+=86401000;
-  const expired=History.create({...options,query:async()=>[]});
+  const expired=History.create({...options,query:async()=>result()});
   await expired.load(a); assert.deepEqual(expired.snapshot().items,[]);
 });
 
 test('corrupt or disabled local storage cannot break RPC history or mix accounts', async () => {
-  const options={chainId:'0x1db1',now:()=>2000000000000,query:async()=>[row(1,2000000000)]};
+  const options={chainId:'0x1db1',now:()=>2000000000000,query:async()=>result([row(1,2000000000)])};
   for(const storage of [{getItem:()=>'{broken',setItem(){}},{getItem(){throw new Error('blocked');},setItem(){throw new Error('quota');}}]){
     const history=History.create({...options,storage});
     await history.load(a);
     assert.equal(history.snapshot().items.length,1);
     assert.equal(history.snapshot().error,'');
   }
+});
+
+test('existing v1 cache is migrated without writing the old storage format', async () => {
+  const storage = memoryStorage(), now = () => 2000000000000;
+  const legacyKey = 'bazaar-history-v1:0x1db1:' + a;
+  const old = JSON.stringify([row(1,now()/1000)], (_key,value) => typeof value === 'bigint' ? value.toString() : value);
+  storage.setItem(legacyKey,old);
+  const history = History.create({storage,now,chainId:'0x1db1',query:async () => result([row(2,now()/1000)])});
+  const task = history.load(a);
+  assert.equal(history.snapshot().items[0].hash,row(1,now()/1000).hash);
+  await task;
+  assert.equal(history.snapshot().items.length,2);
+  assert.equal(storage.getItem(legacyKey),old);
+  const saved = JSON.parse(storage.getItem('bazaar-sync-v1:0x1db1:' + a));
+  assert.equal(saved.items.length,2);
+  assert.equal(saved.lastScannedBlock,1);
 });
 
 test('unchanged balances skip history across reloads; changed, timed and manual checks use the cursor', async () => {
@@ -220,7 +238,7 @@ test('incremental scans cover every new block despite display limits and pin the
     if (call.method === 'eth_getBalance') { balanceBlocks.push(call.params[1]); result = '0xa'; }
     return {id:call.id,result};
   })});
-  const result = await History.recentTransfers(fetchImpl,{account:a,rpcUrl:'mock',fromBlock:101,sync:true,limit:1});
+  const result = await History.recentTransfers(fetchImpl,{account:a,rpcUrl:'mock',fromBlock:101});
   assert.deepEqual(blocks,[103,102,101]);
   assert.equal(result.items.length,3);
   assert.equal(result.lastScannedBlock,103);
@@ -238,7 +256,7 @@ test('known outgoing hashes recover older confirmed transfers and keep pending h
       : '0xa';
     return {id:call.id,result};
   })});
-  const result = await History.recentTransfers(fetchImpl,{account:a,rpcUrl:'mock',fromBlock:101,sync:true,sent:[{hash},{hash:pending}]});
+  const result = await History.recentTransfers(fetchImpl,{account:a,rpcUrl:'mock',fromBlock:101,sent:[{hash},{hash:pending}]});
   assert.deepEqual(result.settledHashes,[hash]);
   assert.equal(result.items[0].valueWei,5n);
   assert.equal(result.lastScannedBlock,100);
@@ -246,12 +264,12 @@ test('known outgoing hashes recover older confirmed transfers and keep pending h
 
 test('queued refreshes cannot restore an account that was switched away', async () => {
   const pending = deferred(); let calls = 0;
-  const history = History.create({query:account => { calls++; return account === a ? pending.promise : []; }});
+  const history = History.create({query:account => { calls++; return account === a ? pending.promise : result(); }});
   const first = history.load(a,{balanceWei:'1'});
   await new Promise(setImmediate);
   const queued = history.load(a,{balanceWei:'2'});
   await history.load(b,{balanceWei:'0'});
-  pending.resolve([]); await first; await queued;
+  pending.resolve(result()); await first; await queued;
   assert.equal(history.snapshot().account,b);
   assert.equal(calls,2);
 });
@@ -282,7 +300,7 @@ test('a successful silent retry publishes new history without exposing an error'
   let calls = 0; const snapshots = [];
   const history = History.create({onChange:state => snapshots.push(state),query:async () => {
     if (++calls === 1) throw new Error('temporary failure');
-    return [];
+    return result();
   }});
   await history.load(a);
   assert.equal(calls,2);
@@ -331,7 +349,7 @@ test('two timed-out attempts release the active request so manual retry can succ
   let calls = 0, available = false;
   const history = History.create({query:() => {
     calls++;
-    if (available) return [];
+    if (available) return result();
     return History.recentTransfers(async () => new Promise(() => {}),{account:a,rpcUrl:'mock',requestTimeout:5});
   }});
   await history.load(a);
@@ -346,7 +364,7 @@ test('two timed-out attempts release the active request so manual retry can succ
 test('switching accounts after a failure cancels the old account silent retry', async () => {
   let rejectFirst; const calls = [];
   const first = new Promise((_,reject) => { rejectFirst = reject; });
-  const history = History.create({query:account => { calls.push(account); return account === a ? first : []; }});
+  const history = History.create({query:account => { calls.push(account); return account === a ? first : result(); }});
   const pending = history.load(a);
   await new Promise(setImmediate);
   await history.load(b);

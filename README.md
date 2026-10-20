@@ -1,10 +1,11 @@
 # MST 파운데이션 달란트
 
-빌드 단계 없이 동작하는 HTML/CSS/JavaScript 서비스입니다. QR 생성·인식 라이브러리는 vendor/에 포함되어 있습니다.
+빌드 단계 없이 동작하는 HTML/CSS/JavaScript 서비스입니다. QR 생성·인식 라이브러리는 vendor/에 포함되어 있습니다. [출처와 라이선스](vendor/README.md)를 함께 기록합니다.
 
 ## 화면과 공통 구조
 
 - index.html: 개인 지갑 잔액, 충전용 받기 QR, 최근 거래
+- preview.html: 지갑 연결 없이 화면 상태와 결제 흐름을 확인하는 미리보기
 - operator.html: 직원이 현금을 받고 손님 지갑으로 충전 송금
 - pay.html: 가게 결제 또는 mode=transfer인 일반 MST 송금
 - store.html: 가게 받기 QR, 잔액, 최근 거래, 공통 송금 화면으로 이동
@@ -47,18 +48,20 @@ QR 카메라·이미지 인식은 qr-scanner.js, QR 생성과 금액·주소 표
 
 RPC: https://block.mustree.kr, Chain ID: 7601 (0x1db1), 기호: MST, decimals: 18.
 
-RPC 타임아웃은 `node tools/measure-rpc.cjs`로 실제 엔드포인트를 순차 측정해 설정했습니다. 원시 기록은 measurements/rpc-latency.json에 있습니다. HTTP 요청 61회 모두 성공했고, 100개 블록 묶음 12회의 최대 응답은 31.7ms, 최신 잔액 12회의 최대 응답은 1,014.9ms였습니다. 모바일 회선과 일시적인 지연에 여유를 두기 위해 공개 RPC 잔액 조회와 내역 조회에 요청당 8초를 적용했습니다. MetaMask provider 요청의 기존 12초 제한은 유지합니다. 이는 PC에서 약 8초 동안 측정한 표본이며 모바일 회선·혼잡 시간대 성능을 보장하지 않습니다. 최근 1,200개 블록에 거래가 없어 영수증·거래가 많은 블록의 성능은 이번 표본에 포함되지 않았습니다.
+공개 RPC 잔액·내역 요청은 각각 8초, MetaMask provider 읽기 요청은 12초로 제한합니다. `node tools/measure-rpc.cjs`로 실제 응답 시간을 다시 측정할 수 있습니다. 결과는 Git에서 제외되는 measurements/rpc-latency.json에 저장됩니다. 이전 PC 표본의 HTTP 요청 61회는 모두 성공했고, 100개 블록 묶음 최대 31.7ms, 잔액 조회 최대 1,014.9ms였습니다. 모바일 회선과 거래가 많은 블록은 이 표본에 포함되지 않았습니다.
 
 ## 미리보기와 테스트
 
-각 화면 URL에 ?preview=1을 붙이면 실제 지갑 조회·승인·송금 없이 공통 UI를 확인할 수 있습니다.
+개인 지갑 미리보기는 `preview.html`에서 제공합니다. 기존 `/?preview=1` 링크는 화면 상태를 유지해 이 페이지로 이동합니다. 결제·충전·가게 화면은 URL에 `?preview=1`을 붙여 확인할 수 있습니다. 미리보기에서는 실제 지갑 조회·승인·송금을 실행하지 않습니다.
 개인 지갑 미리보기는 상태 선택기로 승인·취소·실패·지연 상황을 재현합니다.
 미리보기 QR은 실제 송금에 사용할 수 없는 안내 그림입니다.
+
+Node.js 22 이상과 Python 3을 사용합니다. 별도 패키지 설치나 빌드 과정은 없습니다.
 
 로컬 실행:
 
     python -m http.server 8001 --bind 127.0.0.1
-    node --test tests/*.test.cjs
+    node --test "tests/*.test.cjs"
 
 http://localhost:8001/ 에서 실행합니다. 휴대폰 MetaMask는 PC localhost에 접근할 수 없어 앱 이동 시 실제 배포 주소를 사용합니다.
 실제 기기의 카메라 권한과 MetaMask 승인·계정/네트워크 변경은 별도로 확인해야 합니다.
@@ -67,4 +70,4 @@ http://localhost:8001/ 에서 실행합니다. 휴대폰 MetaMask는 PC localhos
 
 저장소: https://github.com/jade653/bazaar-payment
 main 변경 시 모든 JavaScript의 문법 검사와 테스트 후 HTML/CSS/JavaScript, assets/, vendor/를 GitHub Pages에 배포합니다.
-자세한 초기 설정은 [DEPLOY.md](DEPLOY.md)를 참고하세요.
+배포·운영 절차는 [DEPLOY.md](DEPLOY.md)를 참고하세요.

@@ -191,7 +191,7 @@ test('confirmed success remains visible when a balance refresh fails', async () 
   await page.click('submit');
   assert.match(page.screen.innerHTML, /class="operator-success"/);
 });
-test('mobile payment handoff targets the payment document without a 404 redirect', () => {
+test('mobile payment handoff targets the payment document directly', () => {
   const page = harness({ noProvider:true });
   const url = new URL(page.screen.innerHTML.match(/href="([^"]+)"/)[1].replaceAll('&amp;', '&'));
   assert.equal(url.pathname, '/dapp/bazaar.mustree.kr/pay.html');

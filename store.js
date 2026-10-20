@@ -8,10 +8,12 @@
   let state = { account:null, balanceWei:null, name:localStorage.getItem('bazaar-store-name') || '', status:'' };
   const history = window.BazaarHistory.create({
     chainId:Wallet.NETWORK.chainId, limit:20, storage:preview ? null : undefined,
-    query:(account, options) => preview ? Promise.resolve([
-      { timestamp:Date.now()/1000-180, direction:'in', valueWei:55n*10n**18n, balanceWei:1255n*10n**17n },
-      { timestamp:Date.now()/1000-720, direction:'out', valueWei:10n*10n**18n, balanceWei:705n*10n**17n }
-    ]) : window.BazaarHistory.recentTransfers(window.fetch.bind(window), { account, rpcUrl:Wallet.NETWORK.rpcUrls[0], blockWindow:1200, limit:20, ...options }),
+    query:(account, options) => preview ? Promise.resolve({
+      items:[
+        { hash:'0x'+'a'.repeat(64), blockNumber:'0x0', timestamp:Math.floor(Date.now()/1000)-180, direction:'in', valueWei:55n*10n**18n, balanceWei:1255n*10n**17n },
+        { hash:'0x'+'b'.repeat(64), blockNumber:'0x0', timestamp:Math.floor(Date.now()/1000)-720, direction:'out', valueWei:10n*10n**18n, balanceWei:705n*10n**17n }
+      ], lastScannedBlock:0, balanceWei:'125500000000000000000', settledHashes:[]
+    }) : window.BazaarHistory.recentTransfers(window.fetch.bind(window), { account, rpcUrl:Wallet.NETWORK.rpcUrls[0], ...options }),
     onChange:render
   });
   function render() {

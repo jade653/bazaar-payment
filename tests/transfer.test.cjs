@@ -8,12 +8,12 @@ const balance = '0x' + (100n * 10n ** 18n).toString(16);
 const details = { account, recipient, value:'5000', chainId:'0x1db1' };
 const provider = { request:async ({ method }) => ({ eth_accounts:[account], eth_chainId:'0x1db1', eth_getBalance:balance })[method] };
 
-test('one recipient parser accepts wallet/URI/service QR formats and rejects foreign destinations', () => {
-  for (const value of [recipient, `ethereum:${recipient}@7601`, `https://bazaar.mustree.kr/pay/${recipient}`, `https://bazaar.mustree.kr/pay/${recipient}/5000`, `https://bazaar.mustree.kr/pay.html?to=${recipient}`]) assert.deepEqual(Transfer.parseRecipient(value), {address:recipient, name:''});
-  for (const value of [`https://other.test/pay/${recipient}`, 'javascript:alert(1)', `ethereum:${recipient}@1`, `pay this ${recipient}`]) assert.equal(Transfer.parseRecipient(value), null);
+test('recipient parser accepts wallet addresses, Ethereum URIs and payment links and rejects foreign destinations', () => {
+  for (const value of [recipient, `ethereum:${recipient}@7601`, `https://bazaar.mustree.kr/pay.html?to=${recipient}`]) assert.deepEqual(Transfer.parseRecipient(value), {address:recipient, name:''});
+  for (const value of [`https://other.test/pay.html?to=${recipient}`, 'javascript:alert(1)', `ethereum:${recipient}@1`, `pay this ${recipient}`]) assert.equal(Transfer.parseRecipient(value), null);
 });
-test('one parser reads and limits the store name for both old service and new app QR links', () => {
-  for (const raw of [Transfer.receiveLink(recipient, {name:'  사랑 분식  '}), 'https://bazaar.mustree.kr/pay/'+recipient+'?name='+encodeURIComponent('  사랑 분식  ')]) {
+test('parser reads and limits the store name in payment and MetaMask QR links', () => {
+  for (const raw of [Transfer.receiveLink(recipient, {name:'  사랑 분식  '}), 'https://bazaar.mustree.kr/pay.html?to='+recipient+'&name='+encodeURIComponent('  사랑 분식  ')]) {
     assert.deepEqual(Transfer.parseRecipient(raw), {address:recipient, name:'사랑 분식'});
   }
   const longName = '가'.repeat(50);

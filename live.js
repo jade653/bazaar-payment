@@ -7,9 +7,12 @@
     let account = null, balanceWei = null, retryVisible = false, problem = '';
     let retryTimer, pending = false, disconnected = false, intent = false, externalPending = false;
     let allowAppOpen = false;
+    let needsApp = false;
+    let receiveFromHome = false;
     const requestedView = location.hash === '#receive' ? 'receive' : null;
     let initialView = true;
     const transferHistory = History.create({
+      chainId:Wallet.NETWORK.chainId, limit:5,
       query:account => History.recentTransfers(root.fetch.bind(root), { account, rpcUrl:Wallet.NETWORK.rpcUrls[0], blockWindow:1200, limit:5 }),
       onChange:() => { if (view === 'home') paint(); }
     });
@@ -25,15 +28,15 @@
       }
       if (view === 'home' || view === 'balance-error') {
         const failed = view === 'balance-error';
-        return heading('내 지갑') + UI.balance({ account, balanceWei, failed, copyAttributes:'data-live="copy-address"' }) + (failed ? `<div class="balance-actions single">${button('다시 확인', 'refresh')}</div>` : `<div class="balance-actions">${button('충전하기', 'receive')}${button('가게 결제하기', 'pay', true)}<button type="button" class="home-store-link" data-live="store">내 가게</button></div>${UI.history(transferHistory.snapshot(), { compact:true })}`);
+        return heading('내 지갑') + UI.balance({ account, balanceWei, failed, copyAttributes:'data-live="copy-address"', refreshAttributes:'data-live="refresh"' }) + (failed ? `<div class="balance-actions single">${button('다시 확인', 'refresh')}</div>` : `<div class="balance-actions">${button('충전하기', 'receive')}${button('가게 결제하기', 'pay', true)}<button type="button" class="home-store-link" data-live="store">내 가게</button></div>${UI.history(transferHistory.snapshot(), { compact:true })}`);
       }
-      if (view === 'receive') return heading('현금 결제 후 직원에게<br>이 QR을 보여주세요.') + `${UI.qrMarkup('liveQr', '내 지갑 주소 QR 코드')}<div class="live-address"><code>${account || ''}</code></div>` + actions(button('주소 복사하기', 'copy'), button('내 지갑으로', 'home', true));
+      if (view === 'receive') return heading(UI.receiveTitle) + UI.qrMarkup('liveQr', '내 지갑 주소 QR 코드') + UI.receiveAddress(account) + actions(button('주소 복사하기', 'copy'), button('내 지갑으로', 'home', true));
       return heading('MST로<br>즐거운 바자회.') + illustration('coin') + actions('<p class="screen-description center-state">바자회를 이용하려면<br>앱 설치가 필요해요.</p>', button('1. 앱 설치하기', 'install', true), button('2. 바자회 이어하기', 'start'), '<p class="screen-description center-state">계정 생성 후 이 페이지로 돌아와<br>이어하기 버튼을 눌러주세요.</p>');
     }
     function renderReceiveQr() {
       const target = document.getElementById('liveQr');
       if (!target || !account) return;
-      UI.renderQr(target, account, { QRCode:root.QRCode });
+      UI.renderQr(target, root.BazaarTransfer.receiveLink(account, { topup:true }), { QRCode:root.QRCode });
     }
     function paint() { screen.innerHTML = render(); if (view === 'receive') renderReceiveQr(); }
     function show(next, historyMode = 'replace') {
@@ -45,6 +48,7 @@
       if (historyMode !== 'none' && location.hash !== nextHash) history[historyMode === 'push' ? 'pushState' : 'replaceState'](null, '', nextHash);
     }
     function onState(snapshot) {
+      needsApp = snapshot.status === 'unavailable';
       clearTimeout(retryTimer); problem = ''; retryVisible = false; pending = false;
       if (snapshot.status !== 'ready') balanceWei = null;
       switch (snapshot.status) {
@@ -79,11 +83,17 @@
     }
     function openApp() {
       show('opening');
-      location.assign('https://link.metamask.io/dapp/bazaar.mustree.kr/start.html');
+      location.assign(root.BazaarTransfer.appLink('/start.html'));
     }
     function start() {
       intent = true; allowAppOpen = true;
+      if (needsApp) { allowAppOpen = false; openApp(); return; }
       void controller.setup();
+    }
+    function refreshHome(historyMode) {
+      balanceWei = null; phase = 'query';
+      show('home', historyMode);
+      void controller.refresh();
     }
     function onClick(event) {
       if (event.target.closest('[data-history-refresh]')) { if (account) void transferHistory.load(account); return; }
@@ -96,17 +106,16 @@
           else start(); break;
         case 'open-app': case 'install': openApp(); break;
         case 'home':
-          if (account) void transferHistory.load(account);
-          if (view === 'receive' && location.hash === '#receive') history.back();
-          else show('home', 'push');
+          if (view === 'receive' && receiveFromHome && location.hash === '#receive') { receiveFromHome = false; history.back(); }
+          else refreshHome('replace');
           break;
-        case 'receive': if (account) show('receive', 'push'); break;
+        case 'receive': if (account) { receiveFromHome = true; show('receive', 'push'); } break;
         case 'pay': if (account) location.assign('/pay.html?scan=1'); break;
         case 'store': location.assign('/store.html'); break;
         case 'copy': case 'copy-address':
           if (account && navigator.clipboard) navigator.clipboard.writeText(account).then(() => { target.textContent = '복사했어요'; }).catch(() => { target.textContent = '길게 눌러 복사'; });
           else target.textContent = '길게 눌러 복사'; break;
-        case 'refresh': void controller.refresh(); break;
+        case 'refresh': refreshHome('replace'); break;
       }
     }
     function init() {
@@ -116,7 +125,11 @@
       const readBalanceFromRpc = Wallet.createRpcBalanceReader({ fetchImpl: window.fetch.bind(window) });
       controller = Wallet.createWallet({ getProvider: () => discovery.getProvider(), onState, readBalanceFromRpc });
       screen.addEventListener('click', onClick);
-      window.addEventListener('popstate', () => show(location.hash.slice(1), 'none'));
+      window.addEventListener('popstate', () => {
+        const next = location.hash.slice(1);
+        if (next === 'home' && account) refreshHome('none');
+        else show(next, 'none');
+      });
       const url = new URL(location.href), autoStart = url.searchParams.get('start') === '1';
       url.searchParams.delete('start'); history.replaceState(null, '', url.href);
       show('welcome');

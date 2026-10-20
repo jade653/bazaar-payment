@@ -6,6 +6,7 @@
   let discovery, controller, disposed = false;
   let state = { account:null, balanceWei:null, name:localStorage.getItem('bazaar-store-name') || '', status:'' };
   const history = window.BazaarHistory.create({
+    chainId:Wallet.NETWORK.chainId, limit:20, storage:preview ? null : undefined,
     query:account => preview ? Promise.resolve([
       { timestamp:Date.now()/1000-180, direction:'in', valueWei:55n*10n**18n, balanceWei:1255n*10n**17n },
       { timestamp:Date.now()/1000-720, direction:'out', valueWei:10n*10n**18n, balanceWei:705n*10n**17n }
@@ -21,23 +22,24 @@
       return;
     }
     screen.innerHTML = `<div class="store-name-row"><div><input id="storeName" maxlength="30" value="${UI.esc(state.name)}" aria-label="가게 이름 (선택)" placeholder="가게 이름 (선택)"><button type="button" data-store="save-name">저장</button></div></div><section class="store-card"><div class="store-card-title"><span>받기 QR</span><strong>${UI.esc(state.name || '우리 가게')}</strong></div>${UI.qrMarkup('storeQr', '가게 받기 QR')}</section><a class="operator-secondary pay-link-button" href="/pay.html?mode=transfer${preview ? '&preview=1' : ''}">송금하기</a>${UI.history(history.snapshot())}${UI.alert(state.status)}`;
-    UI.renderQr(document.getElementById('storeQr'), Transfer.paymentLink(state.account, state.name), { preview });
+    UI.renderQr(document.getElementById('storeQr'), Transfer.receiveLink(state.account, { name:state.name }), { preview });
   }
   function set(next) { state = { ...state, ...next }; render(); }
   function onWallet(snapshot) {
     if (snapshot.status === 'ready') {
-      set({ account:snapshot.account, balanceWei:snapshot.balanceWei, status:'' });
+      set({ needsApp:false, account:snapshot.account, balanceWei:snapshot.balanceWei, status:'' });
       void history.load(snapshot.account);
     } else if (['connecting','adding','switching','pending','querying'].includes(snapshot.status)) {
       set({ status:snapshot.status === 'querying' ? '잔액을 확인하고 있어요.' : 'MetaMask에서 확인을 눌러주세요.' });
     } else {
       history.clear();
-      set({ account:null, balanceWei:null, status:snapshot.status === 'idle' ? '' : snapshot.status === 'cancelled' ? '연결이 취소됐어요.' : '가게 지갑을 다시 연결해 주세요.' });
+      set({ needsApp:snapshot.status === 'unavailable', account:null, balanceWei:null, status:snapshot.status === 'idle' ? '' : snapshot.status === 'cancelled' ? '연결이 취소됐어요.' : '가게 지갑을 다시 연결해 주세요.' });
     }
   }
   async function connect() {
+    if (state.needsApp) { location.assign(Transfer.appLink('/store.html')); return; }
     const provider = await discovery.getProvider();
-    if (!provider) { location.assign('https://link.metamask.io/dapp/bazaar.mustree.kr/store.html'); return; }
+    if (!provider) { location.assign(Transfer.appLink('/store.html')); return; }
     await controller.setup();
   }
   screen.addEventListener('click', event => {

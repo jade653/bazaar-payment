@@ -16,12 +16,13 @@
   const won = value => BigInt(value).toLocaleString('ko-KR');
   const button = (text, action, { secondary = false, disabled = false } = {}) => `<button type="button" class="${secondary ? 'operator-secondary' : 'operator-primary'}" data-transfer="${action}"${disabled ? ' disabled' : ''}>${esc(text)}</button>`;
   const alert = text => text ? `<p class="operator-alert" role="status">${esc(text)}</p>` : '';
+  const receiveTitle = '충전할 금액 입금 후 직원에게<br>이 QR을 보여주세요.';
   const labels = {
     payment: { title:'얼마를 결제할까요?', recipient:'받는 가게', amount:'결제 금액', verb:'결제', done:'내 지갑으로' },
     topup: { title:'받은 현금을 입력해 주세요.', recipient:'받는 손님', amount:'현금 금액', verb:'충전', done:'다음 손님' },
     transfer: { title:'얼마를 송금할까요?', recipient:'받는 지갑', amount:'송금 금액', verb:'송금', done:'운영 화면으로' }
   };
-  function transfer(state, { kind = 'payment', amount = null } = {}) {
+  function transfer(state, { kind = 'payment', amount = null, appUrl = '' } = {}) {
     const copy = labels[kind], unit = kind === 'transfer' ? 'MST' : '원';
     if (state.step === 'sending') {
       return `<div class="operator-center"><span class="operator-spinner"></span><h1>${state.hash ? '송금을 확인하고 있어요.' : 'MetaMask에서 확인을 눌러주세요.'}</h1><p>${esc(state.status || '같은 송금을 다시 요청하지 마세요.')}</p>${state.hash ? `<code>${esc(state.hash)}</code>` : ''}</div>${state.hash && state.status ? button('결과 다시 확인', 'check', { disabled:state.busy }) : !state.hash && state.retry ? button('확인 창 다시 열기', 'retry', { secondary:true }) : ''}`;
@@ -33,21 +34,34 @@
       ? `<label for="transferRecipient">${copy.recipient} 주소</label><div class="manual-entry"><div><input id="transferRecipient" type="text" value="${esc(state.manualAddress || '')}" placeholder="0x 지갑 주소 붙여넣기" autocomplete="off"><button type="button" data-transfer="accept">확인</button></div></div>`
       : `<small>${copy.recipient}</small><strong>${esc(state.recipientName || (state.recipient ? short(state.recipient) : 'QR을 스캔해 주세요.'))}</strong>${state.recipient ? `<code>${esc(state.recipient)}</code>` : ''}`;
     const total = amount ? mst(amount.wei) : '0 MST';
-    return `<fieldset class="transfer-fields"${state.busy ? ' disabled' : ''}><div class="operator-title"><h1>${copy.title}</h1></div><div class="recipient-card">${recipient}<div class="store-inline-actions"><button type="button" data-transfer="scan">${state.recipient ? 'QR 다시 스캔' : 'QR 스캔하기'}</button><button type="button" data-transfer="manual">주소 직접 입력</button></div></div>${kind === 'topup' ? `<div class="preset-grid">${[5000,10000,30000,50000].map(value => `<button type="button" data-transfer-won="${value}">${won(value)}원</button>`).join('')}</div>` : ''}<label class="amount-input"><span>${copy.amount}</span><div><input id="transferAmount" type="text" inputmode="${kind === 'transfer' ? 'decimal' : 'numeric'}" value="${esc(state.value || '')}" placeholder="0" autocomplete="off"><b>${unit}</b></div></label><div class="payment-details pay-transfer-details"><div class="detail-row"><span>내 잔액</span><strong>${mst(state.balanceWei)}</strong></div><div class="detail-row total"><span>송금할 MST${kind === 'topup' ? ' · 보너스 10% 포함' : ''}</span><strong>${total}</strong></div></div>${alert(state.status)}${state.insufficient && kind === 'payment' ? button('충전하기', 'topup', { secondary:true }) : ''}${button(!state.recipient ? '받는 QR을 스캔해 주세요.' : !amount ? '금액을 입력해 주세요.' : `${total} ${copy.verb}하기`, 'submit', { disabled:!state.recipient || !amount || state.busy })}</fieldset>`;
+    if (appUrl) return `<div><div class="operator-title"><h1>앱에서 ${copy.verb}${kind === 'payment' ? '를' : '을'}<br>이어가세요.</h1></div><div class="recipient-card">${recipient}</div><p class="screen-description">앱 안에서 금액을 확인하고 ${copy.verb}해 주세요.</p><a class="operator-primary app-handoff" href="${esc(appUrl)}">앱에서 ${copy.verb} 이어하기</a></div>`;
+    const insufficient = state.insufficient && kind === 'payment';
+    const form = `<fieldset class="transfer-fields"${state.busy ? ' disabled' : ''}><div class="operator-title"><h1>${copy.title}</h1></div><div class="recipient-card">${recipient}<div class="store-inline-actions"><button type="button" data-transfer="scan">${state.recipient ? 'QR 다시 스캔' : 'QR 스캔하기'}</button><button type="button" data-transfer="manual">주소 직접 입력</button></div></div>${kind === 'topup' ? `<div class="preset-grid">${[5000,10000,30000,50000].map(value => `<button type="button" data-transfer-won="${value}">${won(value)}원</button>`).join('')}</div>` : ''}<label class="amount-input"><span>${copy.amount}</span><div><input id="transferAmount" type="text" inputmode="${kind === 'transfer' ? 'decimal' : 'numeric'}" value="${esc(state.value || '')}" placeholder="0" autocomplete="off"><b>${unit}</b></div></label><div class="payment-details pay-transfer-details"><div class="detail-row"><span>내 잔액</span><strong>${mst(state.balanceWei)}</strong></div><div class="detail-row total"><span>송금할 MST${kind === 'topup' ? ' · 보너스 10% 포함' : ''}</span><strong>${total}</strong></div></div>${insufficient ? '' : alert(state.status)}${button(!state.recipient ? '받는 QR을 스캔해 주세요.' : !amount ? '금액을 입력해 주세요.' : `${total} ${copy.verb}하기`, 'submit', { disabled:!state.recipient || !amount || state.busy })}</fieldset>`;
+    return form + (insufficient ? `<dialog class="balance-dialog" aria-labelledby="balanceDialogTitle" aria-describedby="balanceDialogAmount"><h2 id="balanceDialogTitle">잔액이 부족합니다.</h2><p id="balanceDialogAmount">현재 잔액: <strong>${mst(state.balanceWei)}</strong></p>${button('충전하기', 'topup')}<button type="button" class="balance-dialog-close" data-transfer="dismiss-insufficient" aria-label="닫기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></dialog>` : '');
+  }
+  function showBalanceDialog(container, onDismiss) {
+    const dialog = container.querySelector('.balance-dialog');
+    if (!dialog) return;
+    dialog.addEventListener('cancel', event => { event.preventDefault(); onDismiss(); });
+    dialog.showModal();
   }
   function history({ items = [], loading = false, error = '' } = {}, { compact = false } = {}) {
     let content;
-    if (loading) content = '<p class="store-empty">거래 내역을 불러오고 있어요.</p>';
+    if (items.length) content = `<div class="store-history-list">${items.map(item => `<div class="store-history-row"><time>${new Date(item.timestamp * 1000).toLocaleString('ko-KR', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' })}</time><strong class="${item.direction === 'in' ? 'in' : 'out'}">${item.direction === 'in' ? '+' : '−'}${mst(item.valueWei)}</strong><span>${item.balanceWei == null ? '—' : mst(item.balanceWei)}</span></div>`).join('')}</div>${loading ? '<p class="history-status" role="status">최근 내역을 확인하고 있어요.</p>' : error ? `<p class="history-status" role="status">${esc(error)}</p><button type="button" class="text-button" data-history-refresh>다시 확인</button>` : ''}`;
+    else if (loading) content = '<p class="store-empty">거래 내역을 불러오고 있어요.</p>';
     else if (error) content = `<p class="store-empty">${esc(error)}</p><button type="button" class="text-button" data-history-refresh>다시 확인</button>`;
-    else if (!items.length) content = '<p class="store-empty">아직 거래 내역이 없어요.</p>';
-    else content = `<div class="store-history-list">${items.map(item => `<div class="store-history-row"><time>${new Date(item.timestamp * 1000).toLocaleString('ko-KR', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' })}</time><strong class="${item.direction === 'in' ? 'in' : 'out'}">${item.direction === 'in' ? '+' : '−'}${mst(item.valueWei)}</strong><span>${mst(item.balanceWei)}</span></div>`).join('')}</div>`;
+    else content = '<p class="store-empty">아직 거래 내역이 없어요.</p>';
     return `<section class="store-history${compact ? ' home-history' : ''}"><h2>최근 거래</h2><div class="store-history-head"><span>시간</span><span>금액</span><span>잔액</span></div>${content}</section>`;
   }
-  function balance({ account, balanceWei, failed = false, copyAttributes = '' }) {
-    return `<div class="balance-panel"><div class="balance-wallet-row"><code>${esc(short(account))}</code><button type="button" ${copyAttributes}>복사하기</button></div><div class="balance-number">${failed ? '—' : mst(balanceWei, false)}${failed ? '' : '<span>MST</span>'}</div><div class="balance-krw">${failed ? '잔액을 확인하지 못했어요.' : (balanceWei == null ? '—' : won(roundedWei(balanceWei) / (10n ** 15n))) + '원 상당'}</div></div>`;
+  function balance({ account, balanceWei, failed = false, copyAttributes = '', refreshAttributes = '' }) {
+    return `<div class="balance-panel"><div class="balance-wallet-row"><code>${esc(short(account))}</code><button type="button" ${copyAttributes}>복사하기</button></div><div class="balance-amount-row"><div class="balance-number">${failed ? '—' : mst(balanceWei, false)}${failed ? '' : '<span>MST</span>'}</div><button type="button" class="balance-refresh" aria-label="잔액 새로고침" title="잔액 새로고침" ${refreshAttributes}><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8M21 3v5h-5M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16M8 16H3v5"/></svg></button></div><div class="balance-krw">${failed ? '잔액을 확인하지 못했어요.' : (balanceWei == null ? '—' : won(roundedWei(balanceWei) / (10n ** 15n))) + '원 상당'}</div></div>`;
   }
   function qrMarkup(id, caption = '받기 QR') {
     return `<div id="${esc(id)}" class="live-qr" role="img" aria-label="${esc(caption)}"></div>`;
+  }
+  function receiveAddress(value) {
+    if (!value) return '';
+    return `<div class="live-address"><code class="receive-address">${esc(short(value))}</code></div>`;
   }
   function renderQr(target, text, { preview = false, QRCode = globalThis.QRCode } = {}) {
     if (!target) return;
@@ -59,5 +73,5 @@
   function errorText(code) {
     return ({ 4001:'송금이 취소됐어요.', INVALID_ADDRESS:'받는 지갑 주소를 확인해 주세요.', INVALID_AMOUNT:'송금할 금액을 확인해 주세요.', NO_ACCOUNT:'지갑을 연결해 주세요.', ACCOUNT_CHANGED:'지갑 계정이 바뀌었어요. 다시 확인해 주세요.', WRONG_CHAIN:'Mustree 네트워크로 다시 연결해 주세요.', INSUFFICIENT_BALANCE:'가스비를 포함한 잔액이 부족해요.', TRANSACTION_FAILED:'송금이 완료되지 않았어요. 다시 시도해 주세요.', RECEIPT_TIMEOUT:'확인이 지연되고 있어요. 기존 거래 결과를 다시 확인해 주세요.', PENDING_TRANSACTION:'기존 거래 결과를 먼저 확인해 주세요.' })[code] || '처리하지 못했어요. 다시 확인해 주세요.';
   }
-  return { esc, short, mst, button, alert, transfer, history, balance, qrMarkup, renderQr, errorText };
+  return { esc, short, mst, button, alert, receiveTitle, transfer, showBalanceDialog, history, balance, qrMarkup, receiveAddress, renderQr, errorText };
 });

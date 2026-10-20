@@ -11,21 +11,30 @@
   function parseRecipient(value, base = 'https://bazaar.mustree.kr') {
     if (typeof value !== 'string') return null;
     const text = value.trim();
-    if (address(text)) return text;
+    if (address(text)) return { address:text, name:'' };
     const uri = text.match(/^ethereum:(0x[0-9a-f]{40})(?:@7601)?(?:[/?].*)?$/i);
-    if (uri) return uri[1];
+    if (uri) return { address:uri[1], name:'' };
     try {
-      const url = new URL(text, base);
+      let url = new URL(text, base);
+      if (url.origin === 'https://link.metamask.io' && url.pathname.startsWith('/dapp/bazaar.mustree.kr/')) {
+        url = new URL('https://' + url.pathname.slice('/dapp/'.length) + url.search);
+      }
       if (!['http:', 'https:'].includes(url.protocol) || !['bazaar.mustree.kr', 'localhost', '127.0.0.1'].includes(url.hostname)) return null;
-      return url.pathname.match(/^\/pay\/(0x[0-9a-f]{40})(?:\/\d+)?\/?$/i)?.[1]
-        || (url.pathname === '/pay.html' ? address(url.searchParams.get('to')) : null);
+      const recipient = url.pathname.match(/^\/pay\/(0x[0-9a-f]{40})(?:\/\d+)?\/?$/i)?.[1]
+        || (['/pay.html', '/operator.html'].includes(url.pathname) ? address(url.searchParams.get('to')) : null);
+      return recipient ? { address:recipient, name:(url.searchParams.get('name') || '').trim().slice(0, 30) } : null;
     } catch { return null; }
   }
-  function paymentLink(account, name = '', origin = 'https://bazaar.mustree.kr') {
+  function appLink(path, params = {}) {
+    const url = new URL(path, 'https://bazaar.mustree.kr');
+    for (const [key, value] of Object.entries(params)) {
+      if (value != null && value !== '') url.searchParams.set(key, value);
+    }
+    return 'https://link.metamask.io/dapp/bazaar.mustree.kr' + url.pathname + url.search + url.hash;
+  }
+  function receiveLink(account, { name = '', topup = false } = {}) {
     if (!address(account)) throw failure('INVALID_ADDRESS');
-    const url = new URL(`/pay/${account}`, origin), cleanName = String(name).trim().slice(0, 30);
-    if (cleanName) url.searchParams.set('name', cleanName);
-    return url.href;
+    return appLink(topup ? '/operator.html' : '/pay.html', { to:account, name:String(name).trim().slice(0, 30) });
   }
   function parseAmount(value, kind = 'payment') {
     if (!['payment', 'topup', 'transfer'].includes(kind)) throw failure('INVALID_AMOUNT');
@@ -33,7 +42,7 @@
     if (kind !== 'transfer') {
       if (!/^\d+$/.test(text)) throw failure('INVALID_AMOUNT');
       const won = BigInt(text);
-      if (won <= 0n || (kind === 'topup' ? won % 1000n !== 0n : won > 10000000n)) throw failure('INVALID_AMOUNT');
+      if (won <= 0n || (kind === 'payment' && won > 10000000n)) throw failure('INVALID_AMOUNT');
       return { won, wei:won * WEI_PER_WON * (kind === 'topup' ? 110n : 100n) / 100n };
     }
     if (!/^\d+(?:\.\d{1,3})?$/.test(text)) throw failure('INVALID_AMOUNT');
@@ -44,7 +53,7 @@
   }
   const sameChain = (a, b) => { try { return BigInt(a) === BigInt(b); } catch { return false; } };
   async function prepare(provider, { account, recipient, value, kind = 'payment', chainId, readBalanceFromRpc }) {
-    const to = parseRecipient(recipient);
+    const to = parseRecipient(recipient)?.address;
     if (!to) throw failure('INVALID_ADDRESS');
     if (!address(account)) throw failure('NO_ACCOUNT');
     const amount = parseAmount(value, kind);
@@ -68,7 +77,7 @@
     const fraction = recipientBalance % WEI_PER_MST;
     const gasTopUpWei = kind === 'topup' && fraction < 50_000_000n ? 50_000_000n - fraction : 0n;
     const payoutWei = amount.wei + gasTopUpWei;
-    if (balance <= payoutWei) throw failure('INSUFFICIENT_BALANCE');
+    if (balance <= payoutWei) throw Object.assign(failure('INSUFFICIENT_BALANCE'), { balanceWei:balance.toString() });
     return { amount, gasTopUpWei, payoutWei, transaction: { from: account, to, value: '0x' + payoutWei.toString(16) } };
   }
   async function waitForReceipt(provider, hash, { interval = 1800, attempts = 70, wait = ms => new Promise(resolve => setTimeout(resolve, ms)) } = {}) {
@@ -110,5 +119,5 @@
     }
     return { send, check };
   }
-  return { parseRecipient, paymentLink, parseAmount, prepare, waitForReceipt, createSender };
+  return { parseRecipient, appLink, receiveLink, parseAmount, prepare, waitForReceipt, createSender };
 });

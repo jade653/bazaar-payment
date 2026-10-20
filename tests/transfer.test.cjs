@@ -9,21 +9,50 @@ const details = { account, recipient, value:'5000', chainId:'0x1db1' };
 const provider = { request:async ({ method }) => ({ eth_accounts:[account], eth_chainId:'0x1db1', eth_getBalance:balance })[method] };
 
 test('one recipient parser accepts wallet/URI/service QR formats and rejects foreign destinations', () => {
-  for (const value of [recipient, `ethereum:${recipient}@7601`, `https://bazaar.mustree.kr/pay/${recipient}`, `https://bazaar.mustree.kr/pay/${recipient}/5000`, `https://bazaar.mustree.kr/pay.html?to=${recipient}`]) assert.equal(Transfer.parseRecipient(value), recipient);
+  for (const value of [recipient, `ethereum:${recipient}@7601`, `https://bazaar.mustree.kr/pay/${recipient}`, `https://bazaar.mustree.kr/pay/${recipient}/5000`, `https://bazaar.mustree.kr/pay.html?to=${recipient}`]) assert.deepEqual(Transfer.parseRecipient(value), {address:recipient, name:''});
   for (const value of [`https://other.test/pay/${recipient}`, 'javascript:alert(1)', `ethereum:${recipient}@1`, `pay this ${recipient}`]) assert.equal(Transfer.parseRecipient(value), null);
 });
-test('receiving QR links preserve an optional store name', () => {
-  assert.equal(Transfer.paymentLink(account), 'https://bazaar.mustree.kr/pay/' + account);
-  assert.equal(Transfer.paymentLink(account, '사랑 분식'), 'https://bazaar.mustree.kr/pay/' + account + '?name=%EC%82%AC%EB%9E%91+%EB%B6%84%EC%8B%9D');
+test('one parser reads and limits the store name for both old service and new app QR links', () => {
+  for (const raw of [Transfer.receiveLink(recipient, {name:'  사랑 분식  '}), 'https://bazaar.mustree.kr/pay/'+recipient+'?name='+encodeURIComponent('  사랑 분식  ')]) {
+    assert.deepEqual(Transfer.parseRecipient(raw), {address:recipient, name:'사랑 분식'});
+  }
+  const longName = '가'.repeat(50);
+  assert.equal(Transfer.parseRecipient('https://bazaar.mustree.kr/pay.html?to='+recipient+'&name='+encodeURIComponent(longName)).name.length, 30);
+});
+test('store QR opens the payment document directly inside MetaMask and remains scannable in the app', () => {
+  const link = Transfer.receiveLink(account, {name:'사랑 분식'});
+  const url = new URL(link);
+  assert.equal(url.origin, 'https://link.metamask.io');
+  assert.equal(url.pathname, '/dapp/bazaar.mustree.kr/pay.html');
+  assert.equal(url.searchParams.get('to'), account);
+  assert.equal(url.searchParams.get('name'), '사랑 분식');
+  assert.equal(Transfer.parseRecipient(link)?.address, account);
+  assert.equal(new URL(Transfer.receiveLink(account)).searchParams.has('name'), false);
+  for (const bad of [link.replace('link.metamask.io', 'fake.test'), link.replace('bazaar.mustree.kr/', 'bazaar.mustree.kr.fake.test/'), link.replace('https:', 'http:')]) assert.equal(Transfer.parseRecipient(bad), null);
+});
+test('receive QR targets the top-up document and rejects foreign deep link destinations', () => {
+  const link = Transfer.receiveLink(account, {topup:true});
+  const url = new URL(link);
+  assert.equal(url.origin, 'https://link.metamask.io');
+  assert.equal(url.pathname, '/dapp/bazaar.mustree.kr/operator.html');
+  assert.equal(url.searchParams.get('to'), account);
+  assert.equal(Transfer.parseRecipient(link)?.address, account);
+  assert.equal(Transfer.parseRecipient('https://bazaar.mustree.kr/operator.html?to='+account)?.address, account);
+  assert.equal(Transfer.parseRecipient(link.replace('bazaar.mustree.kr/', 'other.test/')), null);
+  assert.throws(() => Transfer.receiveLink('invalid', {topup:true}), {code:'INVALID_ADDRESS'});
 });
 test('payment amounts have exact won conversion without a top-up bonus', () => {
   assert.deepEqual(Transfer.parseAmount('5,000원'), { won:5000n, wei:5n * 10n ** 18n });
   assert.equal(Transfer.parseAmount('500').wei, 5n * 10n ** 17n);
   for (const value of ['0','-1','1.5','10000001']) assert.throws(() => Transfer.parseAmount(value), { code:'INVALID_AMOUNT' });
 });
-test('top-up retains 1,000 won increments and the 10% bonus', () => {
+test('top-up accepts whole won amounts from 1 won and keeps the exact 10% bonus', () => {
   assert.deepEqual(Transfer.parseAmount('20,000원', 'topup'), { won:20000n, wei:22n * 10n ** 18n });
-  for (const value of ['0','1500']) assert.throws(() => Transfer.parseAmount(value, 'topup'), { code:'INVALID_AMOUNT' });
+  assert.deepEqual(Transfer.parseAmount('1,500원', 'topup'), { won:1500n, wei:1650000000000000000n });
+  assert.deepEqual(Transfer.parseAmount('1505', 'topup'), { won:1505n, wei:1655500000000000000n });
+  assert.deepEqual(Transfer.parseAmount('1', 'topup'), { won:1n, wei:1100000000000000n });
+  assert.equal(UI.mst(Transfer.parseAmount('1505', 'topup').wei), '1.656 MST');
+  for (const value of ['0','-1','1.5','']) assert.throws(() => Transfer.parseAmount(value, 'topup'), { code:'INVALID_AMOUNT' });
 });
 test('direct transfers retain exact MST values and at most three decimals', () => {
   assert.equal(Transfer.parseAmount('12.345', 'transfer').wei, 12345n * 10n ** 15n);

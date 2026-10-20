@@ -7,13 +7,13 @@ function harness() {
   const events = {}, nodes = new Map(), location = { search:'?preview=1', hash:'#pay-manual' };
   let scannerOptions;
   function node(id) {
-    if (!nodes.has(id)) nodes.set(id, { innerHTML:'', textContent:'', append(){}, insertAdjacentHTML(){}, focus(){}, setSelectionRange(){}, addEventListener(type, handler){ events[id + ':' + type] = handler; } });
+    if (!nodes.has(id)) nodes.set(id, { innerHTML:'', textContent:'', querySelector(){return null;}, append(){}, insertAdjacentHTML(){}, focus(){}, setSelectionRange(){}, addEventListener(type, handler){ events[id + ':' + type] = handler; } });
     return nodes.get(id);
   }
   const context = {
     BazaarUI:require('../payment-ui.js'), BazaarTransfer:require('../transfer-core.js'),
     BazaarScanner:{ create(options){ scannerOptions=options; return { start(){}, stop(){} }; } },
-    location, URLSearchParams, illustration:() => '', setTimeout:() => 1, clearTimeout(){},
+    location, URL, URLSearchParams, illustration:() => '', setTimeout:() => 1, clearTimeout(){},
     history:{ replaceState(_state, _title, hash){ location.hash = hash; } },
     document:{ body:{ classList:{ toggle(){} } }, getElementById:node, createElement:() => node(Symbol()), querySelectorAll:() => [], addEventListener(type,handler){ events['document:' + type] = handler; } },
     window:{ addEventListener(){} }
@@ -21,8 +21,19 @@ function harness() {
   vm.runInNewContext(fs.readFileSync(require.resolve('../app.js'),'utf8'), context);
   const click = dataset => events['document:click']({ target:{ closest:() => ({ disabled:false, dataset }) } });
   const amount = value => events['appScreen:input']({ target:{ id:'transferAmount', value:String(value), selectionStart:String(value).length } });
-  return { click, amount, scanExample:()=>scannerOptions.onPreview(), next:() => events['continueFlow:click'](), location, screen:node('appScreen'), cancel:() => events['cancelDemo:click'](), missing:() => events['missingDemo:click']() };
+  return { click, amount, scan:raw=>scannerOptions.onAccept(raw), scanExample:()=>scannerOptions.onPreview(), next:() => events['continueFlow:click'](), location, screen:node('appScreen'), cancel:() => events['cancelDemo:click'](), missing:() => events['missingDemo:click']() };
 }
+
+test('scanning a named store QR displays its name and clears it when another QR has no name', () => {
+  const page=harness(), recipient='0x'+'2'.repeat(40);
+  page.click({transfer:'scan'});
+  page.scan(require('../transfer-core.js').receiveLink(recipient,{name:'사랑 분식'}));
+  assert.match(page.screen.innerHTML, /<strong>사랑 분식<\/strong>/);
+  page.amount(7500);
+  assert.match(page.screen.innerHTML, /<strong>사랑 분식<\/strong>/);
+  page.scan(recipient);
+  assert.doesNotMatch(page.screen.innerHTML, /사랑 분식/);
+});
 test('preview cancellation returns to the form with the amount and recipient preserved', () => {
   const page = harness();
   page.click({ transfer:'scan' }); page.scanExample(); page.amount(7500); page.click({ transfer:'submit' }); page.cancel();
@@ -39,6 +50,20 @@ test('preview top-up returns to the original payment instead of onboarding', () 
   assert.match(page.screen.innerHTML, /value="7500"/);
   assert.match(page.screen.innerHTML, /14 MST/);
   assert.match(page.screen.innerHTML, /0x2222222222222222222222222222222222222222/);
+});
+test('the insufficient preview uses the shared dialog and closes without losing the payment', () => {
+  const page=harness();
+  page.click({state:'insufficient'});
+  assert.match(page.screen.innerHTML, /<dialog class="balance-dialog"/);
+  assert.match(page.screen.innerHTML, /현재 잔액: <strong>3 MST<\/strong>/);
+  assert.doesNotMatch(page.screen.innerHTML, /class="operator-alert"/);
+  page.click({transfer:'dismiss-insufficient'});
+  assert.doesNotMatch(page.screen.innerHTML, /<dialog/);
+  assert.match(page.screen.innerHTML, /value="5000"/);
+  assert.match(page.screen.innerHTML, /0x2222222222222222222222222222222222222222/);
+  page.click({state:'receive'});
+  assert.match(page.screen.innerHTML, /충전할 금액 입금 후 직원에게<br>이 QR을 보여주세요\./);
+  assert.match(page.screen.innerHTML, /<code class="receive-address">0x111111…111111<\/code>/);
 });
 test('missing approval in preview exposes a usable retry action', () => {
   const page = harness();

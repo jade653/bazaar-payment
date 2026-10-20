@@ -8,7 +8,7 @@ const vm = require('node:vm');
 const UI = require('../payment-ui.js');
 const History = require('../transaction-history.js');
 
-function liveHarness({ query = async () => [], hash = '#welcome' } = {}) {
+function liveHarness({ query = async () => [], hash = '#welcome', provider = null } = {}) {
   const listeners = {};
   const screen = { innerHTML: '', addEventListener(type, handler) { listeners[type] = handler; } };
   const qrNode = {};
@@ -35,42 +35,53 @@ function liveHarness({ query = async () => [], hash = '#welcome' } = {}) {
     addEventListener(type, handler) { listeners['document:' + type] = handler; },
   };
   let walletState;
+  let controller;
   let qrOptions;
   function QRCode(_target, options) { qrOptions = options; }
   QRCode.CorrectLevel = { M: 0 };
   const Wallet = {
     NETWORK:{ rpcUrls:['https://rpc.test'] },
     createRpcBalanceReader() { return async () => '0x0'; },
-    discover() { return { getProvider() {}, dispose() {} }; },
-    createWallet({ onState }) { walletState = onState; return { setup() {}, refresh() {}, restore() {}, dispose() {} }; },
+    discover() { return { getProvider:async()=>provider, dispose() {} }; },
+    createWallet(options) {
+      walletState = options.onState;
+      controller = provider ? require('../wallet.js').createWallet(options) : { setup() {}, refresh() {}, restore() {}, dispose() {} };
+      return controller;
+    },
   };
 
-  const window = { document, location, history, QRCode, fetch: async () => ({ ok: true, json: async () => ({ result: '0x0' }) }), addEventListener(type, handler) { listeners[type] = handler; } };
+  const window = { document, location, history, QRCode, BazaarTransfer:require('../transfer-core.js'), fetch: async () => ({ ok: true, json: async () => ({ result: '0x0' }) }), addEventListener(type, handler) { listeners[type] = handler; } };
   const context = { window, document, location, history, QRCode, URL, navigator: {}, setTimeout, clearTimeout, Promise, console };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '..', 'live.js'), 'utf8'), context);
   window.BazaarLive.create({ Wallet, UI, History:{ ...History, recentTransfers:query }, illustration: () => '' }).init();
   const click = action => listeners.click({ target: { closest: selector => selector === '[data-live]' ? ({ disabled: false, dataset: { live: action } }) : null } });
-  return { screen, location, historyCalls, listeners, click, state: value => walletState(value), qr: () => qrOptions, backCount: () => backCount, assigned };
+  return { screen, location, historyCalls, listeners, click, state: value => walletState(value), qr: () => qrOptions, backCount: () => backCount, assigned, dispose:()=>controller.dispose() };
 }
 
-test('top-up opens a locally generated address QR and survives balance refresh races', () => {
+test('receive QR opens the top-up page inside MetaMask and survives balance refresh races', () => {
   const app = liveHarness();
   const address = '0x1111111111111111111111111111111111111111';
   app.state({ status: 'ready', account: address, balanceWei: '0' });
   assert.match(app.screen.innerHTML, /충전하기/);
 
   app.click('receive');
-  assert.match(app.screen.innerHTML, /현금 결제 후 직원에게/);
-  assert.equal(app.qr().text, address);
+  assert.match(app.screen.innerHTML, /충전할 금액 입금 후 직원에게/);
+  assert.match(app.screen.innerHTML, /<code class="receive-address">0x111111…111111<\/code>/);
+  assert.match(UI.transfer({recipient:address}, {kind:'topup'}), /<strong>0x111111…111111<\/strong>/);
+  const url = new URL(app.qr().text);
+  assert.equal(url.origin, 'https://link.metamask.io');
+  assert.equal(url.pathname, '/dapp/bazaar.mustree.kr/operator.html');
+  assert.equal(url.searchParams.get('to'), address);
+  assert.equal(require('../transfer-core.js').parseRecipient(app.qr().text)?.address, address);
   assert.deepEqual(app.historyCalls.at(-1), ['push', '#receive']);
 
   app.state({ status: 'querying' });
   app.state({ status: 'error', duringBalance: true });
-  assert.match(app.screen.innerHTML, /현금 결제 후 직원에게/);
+  assert.match(app.screen.innerHTML, /충전할 금액 입금 후 직원에게/);
   assert.doesNotMatch(app.screen.innerHTML, /잔액을 확인하지 못했어요/);
 
   app.state({ status: 'ready', account: address, balanceWei: '0' });
-  assert.match(app.screen.innerHTML, /현금 결제 후 직원에게/);
+  assert.match(app.screen.innerHTML, /충전할 금액 입금 후 직원에게/);
 });
 
 test('top-up participates in browser history and returns home on Back', () => {
@@ -81,8 +92,72 @@ test('top-up participates in browser history and returns home on Back', () => {
   app.location.hash = '#home';
   app.location.href = 'https://bazaar.mustree.kr/#home';
   app.listeners.popstate();
+  assert.match(app.screen.innerHTML, /잔액을 확인하고 있어요/);
+  app.state({ status: 'ready', account: '0x2222222222222222222222222222222222222222', balanceWei: '0' });
   assert.match(app.screen.innerHTML, /내 지갑/);
-  assert.doesNotMatch(app.screen.innerHTML, /현금 결제 후 직원에게/);
+  assert.doesNotMatch(app.screen.innerHTML, /충전할 금액 입금 후 직원에게/);
+});
+
+for (const route of ['button','back','direct']) {
+  test(`returning from receive via ${route} refreshes the real wallet and history without a manual refresh`, async t => {
+    const account='0x'+'1'.repeat(40), methods=[];
+    let raw='0x'+(10n**18n).toString(16), releaseBalance, historyReads=0;
+    const provider={request:async({method})=>{
+      methods.push(method);
+      if(method==='eth_accounts')return [account];
+      if(method==='eth_chainId')return '0x1db1';
+      if(method==='eth_getBalance')return raw === null ? new Promise(resolve=>{releaseBalance=resolve;}) : raw;
+      throw new Error('Unexpected wallet approval or transaction: '+method);
+    }};
+    const app=liveHarness({provider,hash:route==='direct'?'#receive':'#home',query:async()=>{
+      historyReads++;
+      return historyReads===1?[]:[{timestamp:1,direction:'in',valueWei:'5500000000000000000',balanceWei:'6500000000000000000'}];
+    }});
+    t.after(app.dispose);
+    await new Promise(setImmediate);
+    if(route!=='direct'){
+      assert.match(app.screen.innerHTML, /1<span>MST/);
+      app.click('receive');
+    }
+    assert.match(app.screen.innerHTML, /이 QR을 보여주세요/);
+    raw=null;
+    if(route!=='back')app.click('home');
+    if(route!=='direct'){
+      assert.equal(app.backCount(),route==='button'?1:0);
+      app.location.hash='#home';
+      app.location.href='https://bazaar.mustree.kr/#home';
+      app.listeners.popstate();
+    }else assert.equal(app.backCount(),0);
+    await new Promise(setImmediate);
+    assert.match(app.screen.innerHTML, /잔액을 확인하고 있어요/);
+    assert.doesNotMatch(app.screen.innerHTML, /1<span>MST/);
+    assert.equal(historyReads,1);
+    releaseBalance('0x'+(65n*10n**17n).toString(16));
+    await new Promise(setImmediate);
+    assert.match(app.screen.innerHTML, /6\.5<span>MST/);
+    assert.match(app.screen.innerHTML, /6,500원 상당/);
+    assert.match(app.screen.innerHTML, /\+5\.5 MST/);
+    assert.equal(historyReads,2);
+    assert.equal(methods.filter(method=>method==='eth_getBalance').length,2);
+    assert.equal(app.location.hash,'#home');
+  });
+}
+
+test('a failed balance refresh on return shows retry instead of the old balance', async t => {
+  let raw='0x'+(10n**18n).toString(16);
+  const provider={request:async({method})=>({eth_accounts:['0x'+'1'.repeat(40)],eth_chainId:'0x1db1',eth_getBalance:raw})[method]};
+  const app=liveHarness({provider,hash:'#receive'});
+  t.after(app.dispose);
+  await new Promise(setImmediate);
+  raw='invalid';
+  app.click('home');
+  await new Promise(setImmediate);
+  assert.match(app.screen.innerHTML,/잔액을 확인하지 못했어요/);
+  assert.doesNotMatch(app.screen.innerHTML,/1<span>MST/);
+  raw='0x'+(65n*10n**17n).toString(16);
+  app.click('refresh');
+  await new Promise(setImmediate);
+  assert.match(app.screen.innerHTML,/6\.5<span>MST/);
 });
 
 test('hides the gas reserve while preserving spendable MST precision', () => {
@@ -116,6 +191,12 @@ test('MetaMask handoff uses a simple start path and store payment opens its scan
   payment.click('pay');
   assert.equal(payment.assigned.at(-1), '/pay.html?scan=1');
 });
+test('continuing after missing-wallet detection opens the app synchronously in the user click', () => {
+  const app = liveHarness();
+  app.state({status:'unavailable'});
+  app.click('start');
+  assert.equal(app.assigned.at(-1), 'https://link.metamask.io/dapp/bazaar.mustree.kr/start.html');
+});
 
 test('wallet ready refreshes the shared history and honors a top-up deep link', async () => {
   let calls = 0;
@@ -123,7 +204,7 @@ test('wallet ready refreshes the shared history and honors a top-up deep link', 
   const snapshot = { status:'ready', account:'0x' + '1'.repeat(40), balanceWei:'0' };
   app.state(snapshot);
   await new Promise(setImmediate);
-  assert.match(app.screen.innerHTML, /현금 결제 후 직원에게/);
+  assert.match(app.screen.innerHTML, /충전할 금액 입금 후 직원에게/);
   app.state({ ...snapshot, balanceWei:'1000000000000000000' });
   await new Promise(setImmediate);
   assert.equal(calls, 2);

@@ -8,8 +8,8 @@ const previewRecipient = '0x' + '2'.repeat(40);
 const toWei = value => BigInt(Math.round(value * 1000)) * 10n ** 15n;
 document.body.classList.toggle('is-preview', preview);
 const mainStates = [
-  {id:'welcome',title:'01 시작',description:'설치 안내는 한 화면만. 기술 설명 없이 시작합니다.'},
-  {id:'opening',title:'02 앱 열기',description:'앱으로 넘어가는 화면. 이동하지 못하면 눌러서 이동합니다.'},
+  {id:'welcome',title:'01 시작',description:'앱 설치와 계정 생성 후 바자회로 돌아오는 방법을 안내합니다.'},
+  {id:'opening',title:'02 앱 열기',description:'설치와 계정 생성을 마친 뒤 바자회 이어하기로 돌아옵니다.'},
   {id:'connect',title:'03 준비 중',description:'기존 5~7번을 같은 화면으로 통합했습니다. 진입 즉시 요청 대기, Confirm만 누르면 다음 단계로 이어집니다.'},
   {id:'home',title:'04 내 지갑',description:'잔액과 충전·결제만 표시합니다.'},
   {id:'receive',title:'05 충전',description:'직원에게 QR을 보여줍니다. 수령하면 잔액으로 돌아갑니다.'},
@@ -89,9 +89,9 @@ function renderScreen(){
   if(['home','empty','balance-error'].includes(currentId))return balanceScreen();
   if(['receive','topup-waiting'].includes(currentId))return receiveScreen();
   if(paymentStates.includes(currentId))return paymentScreen();
-  if(currentId==='opening')return `<div class="center-state">${illustration('phone')}${title('앱으로 이동할게요.','화면이 바뀌지 않으면 눌러주세요.')}</div>`+actions(goButton('눌러서 이동','connect'),goButton('앱 설치하기','welcome','plain-button'));
+  if(currentId==='opening')return `<div class="center-state">${illustration('phone')}${title('준비되면 이어가세요.','계정 생성 후 이 페이지로 돌아와<br>‘바자회 이어하기’를 눌러주세요.')}</div>`+actions(goButton('바자회 이어하기','connect'),goButton('앱 설치하기','opening','secondary'));
   if(currentId==='payment-success')return UI.transfer({step:'success',recipient:previewTarget,value:String(amount),hash:'0x'+'a'.repeat(64)},{kind:'payment',amount:BazaarTransfer.parseAmount(amount)});
-  return title('MST로<br>즐거운 바자회.', '충전하고 간편하게 사용하세요.')+illustration('coin')+actions(goButton('설치하고 시작하기','opening'),goButton('이미 설치했어요 · 시작하기','opening','plain-button'));
+  return title('MST로<br>즐거운 바자회.')+illustration('coin')+actions('<p class="screen-description center-state">바자회를 이용하려면<br>앱 설치가 필요해요.</p>',goButton('1. 앱 설치하기','opening','secondary'),goButton('2. 바자회 이어하기','opening'),'<p class="screen-description center-state">계정 생성 후 이 페이지로 돌아와<br>이어하기 버튼을 눌러주세요.</p>');
 }
 
 function clearTimers(){clearTimeout(requestTimer);clearTimeout(progressTimer);}

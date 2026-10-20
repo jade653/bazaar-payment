@@ -103,6 +103,12 @@ test('MetaMask handoff uses a simple start path and store payment opens its scan
   handoff.click('start');
   handoff.state({ status: 'unavailable' });
   assert.equal(handoff.assigned.at(-1), 'https://link.metamask.io/dapp/bazaar.mustree.kr/start.html');
+  const installation = liveHarness();
+  installation.click('install');
+  assert.equal(installation.assigned.at(-1), handoff.assigned.at(-1));
+  assert.match(installation.screen.innerHTML, /바자회 이어하기/);
+  installation.click('open-app');
+  assert.equal(installation.assigned.at(-1), handoff.assigned.at(-1));
 
   const payment = liveHarness();
   payment.state({ status: 'ready', account: '0x3333333333333333333333333333333333333333', balanceWei: '1000000000000000000' });

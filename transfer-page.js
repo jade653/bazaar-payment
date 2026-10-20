@@ -100,7 +100,10 @@
         return;
       }
       sender ||= Transfer.createSender({ provider, chainId:Wallet.NETWORK.chainId });
-      await sender.send({ ...submitted, kind, readBalanceFromRpc }, { onHash:hash => set({ hash }) });
+      await sender.send({ ...submitted, kind, readBalanceFromRpc }, { onHash:hash => {
+        window.BazaarHistory.recordSent({ chainId:Wallet.NETWORK.chainId, account:submitted.account, hash });
+        set({ hash });
+      } });
       set({ step:'success', status:'' });
       await refreshBalance();
     } catch (error) { handleError(error); }

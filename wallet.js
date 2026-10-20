@@ -26,6 +26,7 @@
     return error && error.code;
   }
   function failure(code) { return Object.assign(new Error(code), { code }); }
+  // Same 8s HTTP budget as history; injected MetaMask reads retain their own timeout.
   function createRpcBalanceReader({ fetchImpl, network = NETWORK, timeout = 8000 }) {
     return async function readRpcBalance(account) {
       if (!addressOK(account) || typeof fetchImpl !== 'function') throw failure('RPC_UNAVAILABLE');

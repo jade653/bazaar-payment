@@ -8,7 +8,7 @@ const vm = require('node:vm');
 const UI = require('../payment-ui.js');
 const History = require('../transaction-history.js');
 
-function liveHarness({ query = async () => [], hash = '#welcome', provider = null } = {}) {
+function liveHarness({ query = async () => [], hash = '#welcome', provider = null, storage } = {}) {
   const listeners = {};
   const screen = { innerHTML: '', addEventListener(type, handler) { listeners[type] = handler; } };
   const qrNode = {};
@@ -50,13 +50,32 @@ function liveHarness({ query = async () => [], hash = '#welcome', provider = nul
     },
   };
 
-  const window = { document, location, history, QRCode, BazaarTransfer:require('../transfer-core.js'), fetch: async () => ({ ok: true, json: async () => ({ result: '0x0' }) }), addEventListener(type, handler) { listeners[type] = handler; } };
+  const window = { document, location, history, QRCode, setInterval(handler, interval) { assert.equal(interval,60000); listeners.tick = handler; return 1; }, clearInterval() { delete listeners.tick; }, BazaarTransfer:require('../transfer-core.js'), fetch: async () => ({ ok: true, json: async () => ({ result: '0x0' }) }), addEventListener(type, handler) { listeners[type] = handler; } };
   const context = { window, document, location, history, QRCode, URL, navigator: {}, setTimeout, clearTimeout, Promise, console };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '..', 'live.js'), 'utf8'), context);
-  window.BazaarLive.create({ Wallet, UI, History:{ ...History, recentTransfers:query }, illustration: () => '' }).init();
+  window.BazaarLive.create({ Wallet, UI, History:{ ...History, create:options => History.create({...options,storage}), recentTransfers:query }, illustration: () => '' }).init();
   const click = action => listeners.click({ target: { closest: selector => selector === '[data-live]' ? ({ disabled: false, dataset: { live: action } }) : null } });
-  return { screen, location, historyCalls, listeners, click, state: value => walletState(value), qr: () => qrOptions, backCount: () => backCount, assigned, dispose:()=>controller.dispose() };
+  return { document, screen, location, historyCalls, listeners, click, state: value => walletState(value), qr: () => qrOptions, backCount: () => backCount, assigned, dispose:()=>controller.dispose() };
 }
+
+test('wallet screen skips unchanged history, forces manual/periodic checks and stops timers on exit', async () => {
+  let calls = 0;
+  const data = new Map(), storage = {getItem:key => data.get(key) || null,setItem:(key,value) => data.set(key,value)};
+  const app = liveHarness({storage,query:async () => ({items:[],lastScannedBlock:++calls,balanceWei:'10'})});
+  const ready = {status:'ready',account:'0x'+'1'.repeat(40),balanceWei:'10'};
+  app.state(ready); await new Promise(setImmediate);
+  app.state(ready); await new Promise(setImmediate);
+  assert.equal(calls,1);
+  app.click('refresh'); app.state(ready); await new Promise(setImmediate);
+  assert.equal(calls,2);
+  app.listeners.tick(); app.state(ready); await new Promise(setImmediate);
+  assert.equal(calls,3);
+  app.document.visibilityState = 'hidden';
+  app.listeners.tick(); app.state(ready); await new Promise(setImmediate);
+  assert.equal(calls,3);
+  app.listeners.pagehide({persisted:false});
+  assert.equal(app.listeners.tick,undefined);
+});
 
 test('receive QR opens the top-up page inside MetaMask and survives balance refresh races', () => {
   const app = liveHarness();

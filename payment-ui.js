@@ -47,10 +47,10 @@
   }
   function history({ items = [], loading = false, error = '' } = {}, { compact = false } = {}) {
     let content;
-    if (items.length) content = `<div class="store-history-list">${items.map(item => `<div class="store-history-row"><time>${new Date(item.timestamp * 1000).toLocaleString('ko-KR', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' })}</time><strong class="${item.direction === 'in' ? 'in' : 'out'}">${item.direction === 'in' ? '+' : '−'}${mst(item.valueWei)}</strong><span>${item.balanceWei == null ? '—' : mst(item.balanceWei)}</span></div>`).join('')}</div>${loading ? '<p class="history-status" role="status">최근 내역을 확인하고 있어요.</p>' : error ? `<p class="history-status" role="status">${esc(error)}</p><button type="button" class="text-button" data-history-refresh>다시 확인</button>` : ''}`;
-    else if (loading) content = '<p class="store-empty">거래 내역을 불러오고 있어요.</p>';
-    else if (error) content = `<p class="store-empty">${esc(error)}</p><button type="button" class="text-button" data-history-refresh>다시 확인</button>`;
-    else content = '<p class="store-empty">아직 거래 내역이 없어요.</p>';
+    if (items.length) content = `<div class="store-history-list">${items.map(item => `<div class="store-history-row"><time>${new Date(item.timestamp * 1000).toLocaleString('ko-KR', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' })}</time><strong class="${item.direction === 'in' ? 'in' : 'out'}">${item.direction === 'in' ? '+' : '−'}${mst(item.valueWei)}</strong><span>${item.balanceWei == null ? '—' : mst(item.balanceWei)}</span></div>`).join('')}</div>`;
+    else content = !loading && !error ? '<p class="store-empty">아직 거래 내역이 없어요.</p>' : '';
+    if (loading) content += `<p class="${items.length ? 'history-status' : 'store-empty'}" role="status">${items.length ? '최근 내역을 확인하고 있어요.' : '거래 내역을 불러오고 있어요.'}</p>`;
+    if (error) content += `<p class="history-status" role="status">${esc(error)}</p><button type="button" class="text-button" data-history-refresh${loading ? ' disabled' : ''}>다시 확인</button>`;
     return `<section class="store-history${compact ? ' home-history' : ''}"><h2>최근 거래</h2><div class="store-history-head"><span>시간</span><span>금액</span><span>잔액</span></div>${content}</section>`;
   }
   function balance({ account, balanceWei, failed = false, copyAttributes = '', refreshAttributes = '' }) {

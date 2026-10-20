@@ -11,9 +11,10 @@
     let receiveFromHome = false;
     const requestedView = location.hash === '#receive' ? 'receive' : null;
     let initialView = true;
+    let forceHistory = false;
     const transferHistory = History.create({
       chainId:Wallet.NETWORK.chainId, limit:5,
-      query:account => History.recentTransfers(root.fetch.bind(root), { account, rpcUrl:Wallet.NETWORK.rpcUrls[0], blockWindow:1200, limit:5 }),
+      query:(account, options) => History.recentTransfers(root.fetch.bind(root), { account, rpcUrl:Wallet.NETWORK.rpcUrls[0], blockWindow:1200, limit:5, ...options }),
       onChange:() => { if (view === 'home') paint(); }
     });
     const button = (text, action, secondary = false) => `<button type="button" class="${secondary ? 'secondary' : 'primary'}" data-live="${action}">${text}</button>`;
@@ -55,7 +56,8 @@
         case 'ready':
           account = snapshot.account; balanceWei = snapshot.balanceWei;
           intent = false; allowAppOpen = false; externalPending = false;
-          void transferHistory.load(account);
+          void transferHistory.load(account, { balanceWei, force:forceHistory });
+          forceHistory = false;
           if (view === 'receive') { paint(); initialView = false; return; }
           show(initialView && requestedView ? requestedView : 'home'); initialView = false; return;
         case 'idle': transferHistory.clear(); account = null; intent = false; allowAppOpen = false; show('welcome'); return;
@@ -90,13 +92,14 @@
       if (needsApp) { allowAppOpen = false; openApp(); return; }
       void controller.setup();
     }
-    function refreshHome(historyMode) {
+    function refreshHome(historyMode, force = false) {
+      forceHistory ||= force;
       balanceWei = null; phase = 'query';
       show('home', historyMode);
       void controller.refresh();
     }
     function onClick(event) {
-      if (event.target.closest('[data-history-refresh]')) { if (account) void transferHistory.load(account); return; }
+      if (event.target.closest('[data-history-refresh]')) { if (account) void transferHistory.load(account, { force:true }); return; }
       const target = event.target.closest('[data-live]');
       if (!target || target.disabled) return;
       switch (target.dataset.live) {
@@ -115,7 +118,7 @@
         case 'copy': case 'copy-address':
           if (account && navigator.clipboard) navigator.clipboard.writeText(account).then(() => { target.textContent = '복사했어요'; }).catch(() => { target.textContent = '길게 눌러 복사'; });
           else target.textContent = '길게 눌러 복사'; break;
-        case 'refresh': refreshHome('replace'); break;
+        case 'refresh': refreshHome('replace', true); break;
       }
     }
     function init() {
@@ -137,7 +140,10 @@
       const refresh = () => { if (view === 'home' && account && !pending && document.visibilityState === 'visible') void controller.refresh(); };
       window.addEventListener('focus', refresh);
       document.addEventListener('visibilitychange', refresh);
-      window.addEventListener('pagehide', event => { if (!event.persisted) { clearTimeout(retryTimer); controller.dispose(); discovery.dispose(); } });
+      const syncTimer = root.setInterval?.(() => {
+        if (view === 'home' && account && document.visibilityState === 'visible') { forceHistory = true; refresh(); }
+      }, History.SYNC_INTERVAL);
+      window.addEventListener('pagehide', event => { if (!event.persisted) { root.clearInterval?.(syncTimer); clearTimeout(retryTimer); controller.dispose(); discovery.dispose(); } });
     }
     return { init };
   }

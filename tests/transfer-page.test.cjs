@@ -7,13 +7,16 @@ const UI = require('../payment-ui.js');
 const Transfer = require('../transfer-core.js');
 const account = '0x' + '1'.repeat(40), recipient = '0x' + '2'.repeat(40), hash = '0x' + 'a'.repeat(64);
 function harness({ kind = 'payment', preview = false, name = '', to = recipient, value = '5000', mst = '5', autoScan = false, balanceWei = 100n * 10n ** 18n, delayProvider = false, noProvider = false, refreshFails = false, receipt = { status:'0x1' } } = {}) {
-  const events = {}, nodes = new Map(), assigned = [], requests = [];
+  const events = {}, nodes = new Map(), assigned = [], requests = [], saved = new Map();
+  const storage = {getItem:key => saved.get(key) || null,setItem:(key,value) => saved.set(key,value)};
+  const History = require('../transaction-history.js');
   const node = id => {
     if (!nodes.has(id)) nodes.set(id, { innerHTML:'', hidden:false, textContent:'', querySelector(){return null;}, focus(){}, setSelectionRange(){}, addEventListener(type, handler) { events[id + ':' + type] = handler; } });
     return nodes.get(id);
   };
   const provider = { request:async request => {
     requests.push(request);
+    if (request.method === 'eth_getTransactionReceipt') assert.equal(JSON.parse(saved.get('bazaar-sent-v1:0x1db1:' + account))[0].hash,hash);
     return ({ eth_accounts:[account], eth_chainId:'0x1db1', eth_getBalance:'0x' + balanceWei.toString(16), eth_sendTransaction:hash, eth_getTransactionReceipt:receipt })[request.method];
   } };
   let walletState, resolveProvider, scannerOptions, setups = 0, scannerStarts = 0;
@@ -29,6 +32,7 @@ function harness({ kind = 'payment', preview = false, name = '', to = recipient,
     }
   };
   const window = {
+    BazaarHistory:{recordSent:options => History.recordSent({...options,storage})},
     BazaarWallet:wallet, BazaarTransfer:{ ...Transfer, createSender:options => Transfer.createSender({ ...options, maxPolls:1 }) }, BazaarUI:UI,
     BazaarScanner:{create(options){scannerOptions=options;return {start(){scannerStarts++;},stop(){}};}},
     fetch:async () => { throw new Error('Unexpected network'); }, addEventListener() {}
@@ -39,7 +43,7 @@ function harness({ kind = 'payment', preview = false, name = '', to = recipient,
   const context = { window, document:{ visibilityState:'visible', getElementById:node, querySelector:selector => selector === '[data-transfer-kind]' ? node('screen') : node('heading'), addEventListener() {} }, URL, location:{ href:'https://bazaar.mustree.kr/' + (kind === 'topup' ? 'operator.html' : 'pay.html') + '?' + params, origin:'https://bazaar.mustree.kr', assign:value => assigned.push(value) } };
   vm.runInNewContext(fs.readFileSync(require.resolve('../transfer-page.js'), 'utf8'), context);
   const click = async action => { events['screen:click']({ target:{ closest:selector => selector === '[data-transfer]' ? { dataset:{ transfer:action } } : null } }); await new Promise(setImmediate); };
-  return { setups:() => setups, requests, assigned, screen:node('screen'), click, scan:raw=>scannerOptions.onAccept(raw), scannerStarts:()=>scannerStarts, input:value=>events['screen:input']({target:{id:'transferAmount',value,selectionStart:value.length,selectionEnd:value.length}}), walletState:value => walletState(value), resolveProvider:() => resolveProvider(provider) };
+  return { saved, setups:() => setups, requests, assigned, screen:node('screen'), click, scan:raw=>scannerOptions.onAccept(raw), scannerStarts:()=>scannerStarts, input:value=>events['screen:input']({target:{id:'transferAmount',value,selectionStart:value.length,selectionEnd:value.length}}), walletState:value => walletState(value), resolveProvider:() => resolveProvider(provider) };
 }
 
 test('a scanned store QR displays its name and an unnamed replacement clears it', async () => {
@@ -123,6 +127,7 @@ for (const kind of ['payment', 'topup', 'transfer']) {
     assert.match(page.screen.innerHTML, /id="transferAmount"/);
     await page.click('submit');
     assert.equal(page.requests.filter(item => item.method === 'eth_sendTransaction').length, 1);
+    assert.equal(JSON.parse(page.saved.get('bazaar-sent-v1:0x1db1:' + account))[0].hash,hash);
     assert.match(page.screen.innerHTML, /class="operator-success"/);
     assert.match(page.screen.innerHTML, kind === 'topup' ? /5\.5 MST/ : /5 MST/);
   });
@@ -132,6 +137,7 @@ for (const kind of ['payment', 'topup', 'transfer']) {
     await page.click('submit');
     assert.match(page.screen.innerHTML, /class="operator-success"/);
     assert.equal(page.requests.length, 0);
+    assert.equal(page.saved.size,0);
   });
 }
 test('automatic scanning starts once the wallet is available and never launches a camera in an external browser', () => {

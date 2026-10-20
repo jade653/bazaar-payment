@@ -4,13 +4,14 @@
   const screen = document.getElementById('storeScreen'), balanceNode = document.getElementById('storeBalance');
   const preview = new URL(location.href).searchParams.has('preview');
   let discovery, controller, disposed = false;
+  let forceHistory = false;
   let state = { account:null, balanceWei:null, name:localStorage.getItem('bazaar-store-name') || '', status:'' };
   const history = window.BazaarHistory.create({
     chainId:Wallet.NETWORK.chainId, limit:20, storage:preview ? null : undefined,
-    query:account => preview ? Promise.resolve([
+    query:(account, options) => preview ? Promise.resolve([
       { timestamp:Date.now()/1000-180, direction:'in', valueWei:55n*10n**18n, balanceWei:1255n*10n**17n },
       { timestamp:Date.now()/1000-720, direction:'out', valueWei:10n*10n**18n, balanceWei:705n*10n**17n }
-    ]) : window.BazaarHistory.recentTransfers(window.fetch.bind(window), { account, rpcUrl:Wallet.NETWORK.rpcUrls[0], blockWindow:1200, limit:20 }),
+    ]) : window.BazaarHistory.recentTransfers(window.fetch.bind(window), { account, rpcUrl:Wallet.NETWORK.rpcUrls[0], blockWindow:1200, limit:20, ...options }),
     onChange:render
   });
   function render() {
@@ -28,7 +29,8 @@
   function onWallet(snapshot) {
     if (snapshot.status === 'ready') {
       set({ needsApp:false, account:snapshot.account, balanceWei:snapshot.balanceWei, status:'' });
-      void history.load(snapshot.account);
+      void history.load(snapshot.account, { balanceWei:snapshot.balanceWei, force:forceHistory });
+      forceHistory = false;
     } else if (['connecting','adding','switching','pending','querying'].includes(snapshot.status)) {
       set({ status:snapshot.status === 'querying' ? '잔액을 확인하고 있어요.' : 'MetaMask에서 확인을 눌러주세요.' });
     } else {
@@ -43,7 +45,7 @@
     await controller.setup();
   }
   screen.addEventListener('click', event => {
-    if (event.target.closest('[data-history-refresh]')) { if (state.account) void history.load(state.account); return; }
+    if (event.target.closest('[data-history-refresh]')) { if (state.account) void history.load(state.account, { force:true }); return; }
     const target = event.target.closest('[data-store]');
     if (!target || target.disabled) return;
     if (target.dataset.store === 'connect') void connect();
@@ -53,9 +55,12 @@
     }
   });
   const refresh = () => { if (!preview && document.visibilityState === 'visible') void controller.refresh(); };
-  balanceNode.addEventListener('click', refresh);
+  balanceNode.addEventListener('click', () => { forceHistory = true; refresh(); });
   window.addEventListener('focus', refresh); document.addEventListener('visibilitychange', refresh);
-  window.addEventListener('pagehide', event => { if (!event.persisted) { disposed = true; controller?.dispose(); discovery?.dispose(); history.clear(); } });
+  const syncTimer = preview ? null : window.setInterval?.(() => {
+    if (state.account && document.visibilityState === 'visible') { forceHistory = true; refresh(); }
+  }, window.BazaarHistory.SYNC_INTERVAL);
+  window.addEventListener('pagehide', event => { if (!event.persisted) { window.clearInterval?.(syncTimer); disposed = true; controller?.dispose(); discovery?.dispose(); history.clear(); } });
   if (preview) {
     state.account = '0x' + '1'.repeat(40); state.balanceWei = '125500000005000000000';
     void history.load(state.account);

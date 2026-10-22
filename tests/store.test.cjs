@@ -82,14 +82,15 @@ test('store polls every five seconds and updates deposits without replacing QR o
   const Wallet={
     NETWORK:{chainId:'0x1db1',rpcUrls:[]},createRpcBalanceReader(){return ()=>{};},
     discover(){return {dispose(){}};},
-    createWallet({onState}){
+    createWallet({onState,lifecycle}){
+      lifecycle.document.addEventListener('visibilitychange',()=>{if(lifecycle.document.visibilityState==='visible'){refreshes++;notify({status:'querying'});ready();}});
       notify=onState;
       return {restore:ready,refresh(){refreshes++;notify({status:'querying'});ready();},dispose(){disposed=true;}};
     }
   };
   vm.runInNewContext(fs.readFileSync(require.resolve('../store.js'),'utf8'),{
     URL, location:{href:'https://bazaar.mustree.kr/store.html'},localStorage:{getItem:()=>null,setItem(){}},document,
-    window:{BazaarWallet:Wallet,BazaarTransfer:Transfer,BazaarUI:{...UI,renderQr(){qrRenders++;}},
+    window:{document,BazaarWallet:Wallet,BazaarTransfer:Transfer,BazaarUI:{...UI,renderQr(){qrRenders++;}},
       BazaarHistory:{...History,create(options){
         historyModel=History.create({...options,storage:null,now:()=>now,query:async()=>{queries++;if(finishQuery)await new Promise(resolve=>{finishQuery=resolve;});return result();}});
         return historyModel;

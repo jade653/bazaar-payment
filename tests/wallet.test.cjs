@@ -56,9 +56,9 @@ test('already permitted user on Mustree receives no approval prompts',async t=>{
   assert.equal(f.wallet.getSnapshot().status,'ready');
   assert.ok(!f.methods().some(x=>x.startsWith('wallet_')||x==='eth_requestAccounts'));
 });
-test('page restore without permission never requests accounts or a network switch',async t=>{
+test('page entry requests account access and switches to Mustree automatically',async t=>{
   const p=new Provider({accounts:[],chain:'0x1'}),f=fixture(p);t.after(()=>f.wallet.dispose());await f.wallet.restore();
-  assert.equal(f.wallet.getSnapshot().status,'idle');assert.deepEqual(f.methods(),['eth_accounts']);
+  assert.equal(f.wallet.getSnapshot().status,'ready');assert.ok(f.methods().includes('eth_requestAccounts'));assert.ok(f.methods().includes('wallet_switchEthereumChain'));
 });
 test('account approval rejection stops the rest of onboarding',async t=>{
   const p=new Provider({accounts:[]});p.hooks.eth_requestAccounts=()=>Promise.reject({code:4001});
@@ -83,7 +83,7 @@ test('repeated clicks reuse a pending approval request',async t=>{
 });
 test('external -32002 remains pending; retry only polls and does not create another prompt',async t=>{
   const p=new Provider({accounts:[]});p.hooks.eth_requestAccounts=()=>Promise.reject({code:-32002});
-  const f=fixture(p);t.after(()=>f.wallet.dispose());await f.wallet.setup();await f.wallet.setup();
+  const f=fixture(p);t.after(()=>f.wallet.dispose());await f.wallet.setup();await f.wallet.restore();await f.wallet.refresh();
   assert.equal(f.wallet.getSnapshot().status,'pending');assert.equal(f.methods().filter(x=>x==='eth_requestAccounts').length,1);
   p.accounts=[A];await f.wallet.setup();assert.equal(f.wallet.getSnapshot().status,'ready');
 });
@@ -131,11 +131,11 @@ test('account changed while balance loads discards the stale account response',a
   assert.equal(f.wallet.getSnapshot().account,B);assert.equal(f.wallet.getSnapshot().balanceWei,'1');
   assert.ok(!f.snapshots.some(s=>s.status==='ready'&&s.balanceWei==='65535'));
 });
-test('network change clears the balance and never auto-prompts during passive refresh',async t=>{
+test('network change automatically switches back to Mustree and verifies the balance',async t=>{
   const p=new Provider(),f=fixture(p);t.after(()=>f.wallet.dispose());await f.wallet.setup();
   p.chain='0x1';p.emit('chainChanged','0x1');await wait();
-  assert.equal(f.wallet.getSnapshot().status,'needs-network');assert.equal(f.wallet.getSnapshot().balanceWei,null);
-  assert.ok(!f.methods().includes('wallet_switchEthereumChain'));
+  assert.equal(f.wallet.getSnapshot().status,'ready');assert.equal(p.chain,NETWORK.chainId);
+  assert.ok(f.methods().includes('wallet_switchEthereumChain'));
 });
 test('revoked permission and disconnected provider clear account data',async t=>{
   const p=new Provider(),f=fixture(p);t.after(()=>f.wallet.dispose());await f.wallet.setup();

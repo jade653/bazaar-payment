@@ -73,7 +73,7 @@
         case 'pending': externalPending = true; pending = true; problem = 'MetaMask에 열린 요청을 확인해 주세요.'; break;
         case 'cancelled': intent = false; allowAppOpen = false; externalPending = false; problem = '이어서 준비할 수 있어요.'; break;
         case 'needs-network':
-          if (intent && externalPending) { externalPending = false; void Promise.resolve().then(() => controller.setup()); return; }
+          // Only an explicit retry may reopen a cancelled or pending approval.
           problem = '다시 확인을 눌러주세요.'; break;
         case 'disconnected': transferHistory.clear(); account = null; disconnected = true; problem = '연결이 끊겼어요. 다시 연결해 주세요.'; break;
         case 'error':
@@ -125,7 +125,7 @@
       document.querySelector('.app-footer').textContent = 'MST 파운데이션 달란트';
       discovery = Wallet.discover(window);
       const readBalanceFromRpc = Wallet.createRpcBalanceReader({ fetchImpl: window.fetch.bind(window) });
-      controller = Wallet.createWallet({ getProvider: () => discovery.getProvider(), onState, readBalanceFromRpc });
+      controller = Wallet.createWallet({ lifecycle:window, getProvider: () => discovery.getProvider(), onState, readBalanceFromRpc });
       screen.addEventListener('click', onClick);
       window.addEventListener('popstate', () => {
         const next = location.hash.slice(1);
@@ -137,8 +137,7 @@
       show('welcome');
       if (autoStart) { intent = true; void controller.setup(); } else void controller.restore();
       const refresh = () => { if (view === 'home' && account && !pending && document.visibilityState === 'visible') void controller.refresh(); };
-      window.addEventListener('focus', refresh);
-      document.addEventListener('visibilitychange', refresh);
+
       const syncTimer = root.setInterval?.(() => {
         if (view === 'home' && account && document.visibilityState === 'visible') { forceHistory = true; refresh(); }
       }, History.SYNC_INTERVAL);

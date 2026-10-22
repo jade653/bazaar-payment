@@ -64,3 +64,8 @@ body:has(>.scanner:not([hidden])){overflow:hidden}.scanner[hidden]{display:none}
 .live-address .receive-address{font-family:inherit;font-size:17px;line-height:1.5;font-weight:700;color:var(--ink)}
 .history-status{margin:12px 0 0;font-size:11px;line-height:1.7;color:var(--muted)}
 body:has(dialog[open]){overflow:hidden}.balance-dialog{width:360px;max-width:calc(100vw - 40px);max-height:calc(100dvh - 40px);border:0;border-radius:22px;padding:40px 28px 28px;background:#fff;color:var(--ink);box-shadow:0 20px 70px #162c2633}.balance-dialog::backdrop{background:#142b2380;backdrop-filter:blur(2px)}.balance-dialog h2{margin:0;font-size:23px;font-weight:700;letter-spacing:-.05em}.balance-dialog p{margin:20px 0 28px;font-size:14px;color:#738479}.balance-dialog p strong{color:var(--ink);font-weight:650}.balance-dialog>.operator-primary{margin-top:0}.balance-dialog-close{position:absolute;top:10px;right:10px;display:grid;place-items:center;width:36px;height:36px;border:0;border-radius:50%;background:transparent;color:#718278}.balance-dialog-close svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}
+
+.wallet-diagnostics { width: calc(100% - 32px); margin: 16px auto; padding: 12px; max-width: 480px; color: #233d35; background: #fff; border: 1px solid #ccd6d0; border-radius: 12px; font-size: 13px; }
+.wallet-diagnostics summary { cursor: pointer; }
+.wallet-diagnostics button { padding: 10px; margin: 4px 0; cursor: pointer; }
+.wallet-diagnostics textarea { display: block; width: 100%; min-height: 140px; margin-top: 8px; box-sizing: border-box; font-size: 12px; }

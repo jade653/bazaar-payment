@@ -127,3 +127,32 @@ test('balance displays share rounding while preserving large integer precision',
   assert.equal(UI.mst('50000000'), '0 MST');
   assert.equal(UI.mst(9007199254740993n * 10n ** 18n), '9,007,199,254,740,993 MST');
 });
+
+
+test('unrecognized receipts and receipt read timeouts never release a sent transaction', async () => {
+  for (const result of [{}, 'hang']) {
+    let sends=0;
+    const wallet={request:async request=>{
+      if(request.method==='eth_sendTransaction'){sends++;return hash;}
+      if(request.method==='eth_getTransactionReceipt')return result==='hang'?new Promise(()=>{}):result;
+      return provider.request(request);
+    }};
+    const sender=Transfer.createSender({provider:wallet,chainId:'0x1db1',maxPolls:1,readTimeout:5});
+    await assert.rejects(sender.send(details),{code:result==='hang'?'READ_TIMEOUT':'INVALID_RECEIPT'});
+    await assert.rejects(sender.send(details),{code:'PENDING_TRANSACTION'});
+    assert.equal(sends,1);
+  }
+});
+test('receipt checks on a different chain retain the hash until the original chain returns',async()=>{
+  let chain='0x1db1',sends=0;
+  const wallet={request:async request=>{
+    if(request.method==='eth_chainId')return chain;
+    if(request.method==='eth_sendTransaction'){sends++;return hash;}
+    if(request.method==='eth_getTransactionReceipt')return {status:'0x1'};
+    return provider.request(request);
+  }};
+  const sender=Transfer.createSender({provider:wallet,chainId:'0x1db1',maxPolls:1});
+  await assert.rejects(sender.send(details,{onHash(){chain='0x1';}}),{code:'WRONG_CHAIN'});
+  await assert.rejects(sender.send(details),{code:'PENDING_TRANSACTION'});
+  chain='0x1db1';await sender.check(hash);assert.equal(sends,1);
+});

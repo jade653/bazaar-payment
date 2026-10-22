@@ -85,38 +85,89 @@
       const receipt = await provider.request({ method: 'eth_getTransactionReceipt', params: [hash] });
       if (receipt) {
         if (receipt.status === '0x1' || receipt.status === '0x01' || receipt.status === 1) return receipt;
-        throw failure('TRANSACTION_FAILED');
+        if (receipt.status === '0x0' || receipt.status === '0x00' || receipt.status === 0) throw failure('TRANSACTION_FAILED');
+        throw failure('INVALID_RECEIPT');
       }
       if (i + 1 < attempts) await wait(interval);
     }
     throw failure('RECEIPT_TIMEOUT');
   }
-  function createSender({ provider, chainId, pollInterval = 1800, maxPolls = 70, wait }) {
-    let active = null, pendingHash = null;
-    async function check(hash = pendingHash) {
+  function createSender({ provider, chainId, pollInterval = 1800, maxPolls = 70, wait,
+    readTimeout = 12000, storage = null, diagnostics = null }) {
+    let active = null, pendingHash = null, pendingAccount = null, pendingDetails = null, actualChainId = null;
+    const key = account => 'bazaar-payment-pending-v1:' + chainId + ':' + account.toLowerCase();
+    const log = (stage, error, hash = pendingHash) => diagnostics?.record({ stage, error, hash, chainId:actualChainId });
+    async function request(request) {
+      const method = request.method;
+      let timer;
       try {
-        const receipt = await waitForReceipt(provider, hash, { interval: pollInterval, attempts: maxPolls, wait });
-        if (pendingHash === hash) pendingHash = null;
-        return receipt;
+        // Receipt reads must stay on the original chain, including after app return.
+        if (method === 'eth_getTransactionReceipt') {
+          const chain = await rpc.request({ method:'eth_chainId' });
+          if (!sameChain(chain, chainId)) throw failure('WRONG_CHAIN');
+        }
+        const task = Promise.resolve().then(() => provider.request(request));
+        const result = method === 'eth_sendTransaction' ? await task : await Promise.race([
+          task, new Promise((_, reject) => { timer = setTimeout(() => reject(failure('READ_TIMEOUT')), readTimeout); })
+        ]);
+        if (method === 'eth_chainId') actualChainId = result;
+        log('transfer:' + method + ':success', null, method === 'eth_sendTransaction' ? result : pendingHash);
+        return result;
+      } catch (error) { log('transfer:' + method + ':failure', error); throw error; }
+      finally { clearTimeout(timer); }
+    }
+    const rpc = { request };
+    function pending(account) {
+      if (pendingHash) return pendingHash;
+      try {
+        const entry = JSON.parse(storage?.getItem(key(account)) || 'null');
+        if (HASH.test(entry?.hash || '')) {
+          pendingHash = entry.hash; pendingAccount = account;
+          if (address(entry.details?.recipient) && entry.details.account?.toLowerCase() === account.toLowerCase()) pendingDetails = entry.details;
+        }
+      } catch {}
+      return pendingHash;
+    }
+    function clearPending(hash) {
+      if (pendingHash !== hash) return;
+      try { storage?.removeItem(key(pendingAccount)); } catch {}
+      pendingHash = null; pendingAccount = null; pendingDetails = null;
+    }
+    async function check(hash = pendingHash) {
+      log('receipt:checking', null, hash);
+      try {
+        const receipt = await waitForReceipt(rpc, hash, { interval:pollInterval, attempts:maxPolls, wait });
+        log('receipt:confirmed', null, hash); clearPending(hash); return receipt;
       } catch (error) {
-        if (error.code === 'TRANSACTION_FAILED' && pendingHash === hash) pendingHash = null;
+        log('receipt:failure', error, hash);
+        // Only an explicit failed receipt makes a new payment safe.
+        if (error.code === 'TRANSACTION_FAILED') clearPending(hash);
         throw error;
       }
     }
     function send(details, { onHash = () => {} } = {}) {
       if (active) return active;
-      if (pendingHash) return Promise.reject(Object.assign(failure('PENDING_TRANSACTION'), { hash: pendingHash }));
+      if (pending(details.account)) return Promise.reject(Object.assign(failure('PENDING_TRANSACTION'), { hash:pendingHash }));
       active = (async () => {
-        const prepared = await prepare(provider, { ...details, chainId });
-        const hash = await provider.request({ method: 'eth_sendTransaction', params: [prepared.transaction] });
+        log('payment:prepare');
+        let prepared;
+        try { prepared = await prepare(rpc, { ...details, chainId }); }
+        catch (error) { log('payment:prepare:failure', error); throw error; }
+        // Include chainId so the wallet can also reject a network change at approval time.
+        const hash = await rpc.request({ method:'eth_sendTransaction', params:[{ ...prepared.transaction, chainId }] });
         if (!HASH.test(hash || '')) throw failure('INVALID_TX_HASH');
-        pendingHash = hash;
+        pendingHash = hash; pendingAccount = details.account;
+        pendingDetails = { account:details.account, recipient:details.recipient, value:details.value, kind:details.kind || 'payment' };
+        // Persist before callbacks or receipt reads, so a reload cannot discard a sent hash.
+        try { storage?.setItem(key(pendingAccount), JSON.stringify({ hash, details:pendingDetails })); }
+        catch (error) { log('payment:pending-storage-failure', error); }
+        log('payment:hash-received');
         onHash(hash);
-        return { ...prepared, hash, receipt: await check(hash) };
+        return { ...prepared, hash, receipt:await check(hash) };
       })().finally(() => { active = null; });
       return active;
     }
-    return { send, check };
+    return { send, check, pending, getChainId:() => actualChainId, pendingDetails:() => pendingDetails && ({ ...pendingDetails }) };
   }
   return { parseRecipient, appLink, receiveLink, parseAmount, prepare, waitForReceipt, createSender };
 });

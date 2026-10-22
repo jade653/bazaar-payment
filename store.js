@@ -87,7 +87,7 @@
   });
   const refresh = () => { if (!preview && document.visibilityState === 'visible') void controller.refresh(); };
   balanceNode.addEventListener('click', () => { forceHistory = true; refresh(); });
-  window.addEventListener('focus', refresh); document.addEventListener('visibilitychange', refresh);
+
   const syncTimer = preview ? null : window.setInterval?.(() => {
     if (state.account && document.visibilityState === 'visible') refresh();
   }, 5000);
@@ -97,7 +97,7 @@
     void history.load(state.account);
   } else {
     discovery = Wallet.discover(window);
-    controller = Wallet.createWallet({ getProvider:() => discovery.getProvider(), onState:onWallet, readBalanceFromRpc:Wallet.createRpcBalanceReader({ fetchImpl:window.fetch.bind(window) }) });
+    controller = Wallet.createWallet({ lifecycle:window, getProvider:() => discovery.getProvider(), onState:onWallet, readBalanceFromRpc:Wallet.createRpcBalanceReader({ fetchImpl:window.fetch.bind(window) }) });
     void controller.restore();
   }
   render();

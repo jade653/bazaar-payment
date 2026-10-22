@@ -14,7 +14,7 @@
     let forceHistory = false;
     const transferHistory = History.create({
       chainId:Wallet.NETWORK.chainId, limit:5,
-      query:(account, options) => History.recentTransfers(root.fetch.bind(root), { account, rpcUrl:Wallet.NETWORK.rpcUrls[0], ...options }),
+      query:(account, options) => History.recentTransfers(root.fetch.bind(root), { account, rpcUrl:Wallet.NETWORK.rpcUrls[0], token:Wallet.TOKEN, ...options }),
       onChange:() => { if (view === 'home') paint(); }
     });
     const button = (text, action, secondary = false) => `<button type="button" class="${secondary ? 'secondary' : 'primary'}" data-live="${action}">${text}</button>`;

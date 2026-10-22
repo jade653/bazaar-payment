@@ -13,7 +13,7 @@
   const diagnostics = preview ? null : Wallet.diagnosticsFor?.(window);
   const log = (stage, error, hash) => diagnostics?.record({ stage, error, hash, chainId:sender?.getChainId?.() ?? controller?.getSnapshot?.().chainId });
   const initialRecipient = Transfer.parseRecipient(location.href);
-  let state = { step:isTopup ? 'connect' : 'form', account:null, balanceWei:null, recipient:initialRecipient?.address || null, recipientName:initialRecipient?.name || '', value:params.get(kind === 'transfer' ? 'mst' : 'won') || '', manual:false, status:'', hash:null, busy:false };
+  let state = { step:isTopup ? 'connect' : 'form', account:null, balanceWei:null, gasWei:null, topUpsLeft:null, recipient:initialRecipient?.address || null, recipientName:initialRecipient?.name || '', value:params.get(kind === 'transfer' ? 'mst' : 'won') || '', manual:false, status:'', hash:null, busy:false };
   let discovery, controller, provider, sender, senderProvider, scanner, submitted = null, disposed = false;
   let autoScan = params.get('scan') === '1' && !isTopup;
   const readBalanceFromRpc = preview ? null : Wallet.createRpcBalanceReader({ fetchImpl:window.fetch.bind(window) });
@@ -39,7 +39,7 @@
   function set(next) { state = { ...state, ...next }; render(); }
   function onWallet(snapshot) {
     if (snapshot.status === 'ready') {
-      set({ walletBlocked:false, needsApp:false, account:snapshot.account, balanceWei:snapshot.balanceWei, step:state.step === 'connect' ? 'form' : state.step, status:state.step === 'sending' ? state.status : '' });
+      set({ walletBlocked:false, needsApp:false, account:snapshot.account, balanceWei:snapshot.balanceWei, gasWei:snapshot.gasWei ?? null, topUpsLeft:isTopup && snapshot.gasWei != null ? Transfer.topUpsAffordable(snapshot.gasWei, Wallet.TOKEN) : null, step:state.step === 'connect' ? 'form' : state.step, status:state.step === 'sending' ? state.status : '' });
     } else {
       const invalid = ['idle','needs-network','disconnected','unavailable'].includes(snapshot.status);
       const message = snapshot.status === 'cancelled' ? '연결이 취소됐어요. 지갑 연결 다시 시도를 눌러주세요.'
@@ -47,7 +47,7 @@
         : ['connecting','adding','switching','pending'].includes(snapshot.status) ? 'MetaMask에서 확인을 눌러주세요.'
         : snapshot.status === 'querying' ? '잔액을 확인하고 있어요.'
         : invalid ? '지갑을 연결해 주세요.' : '지갑을 연결하지 못했어요.';
-      set({ walletBlocked:['pending','cancelled','needs-network','error','disconnected'].includes(snapshot.status), needsApp:snapshot.status === 'unavailable', account:null, balanceWei:null, status:state.step === 'sending' ? state.status : message });
+      set({ walletBlocked:['pending','cancelled','needs-network','error','disconnected'].includes(snapshot.status), needsApp:snapshot.status === 'unavailable', account:null, balanceWei:null, gasWei:null, topUpsLeft:null, status:state.step === 'sending' ? state.status : message });
     }
     if (autoScan && ['ready','idle','needs-network'].includes(snapshot.status)) { autoScan = false; scan(); }
   }
@@ -68,13 +68,13 @@
     return Transfer.appLink(isTopup ? '/operator.html' : '/pay.html', {
       to:state.recipient, name:state.recipientName,
       mode:kind === 'transfer' ? 'transfer' : '',
-      [kind === 'transfer' ? 'mst' : 'won']:amount ? kind === 'transfer' ? state.value : amount.won.toString() : '',
+      [kind === 'transfer' ? 'mst' : 'won']:amount ? amount.won.toString() : '',
       scan:!state.recipient && params.get('scan') === '1' ? '1' : ''
     });
   }
   function openMetaMask() { location.assign(metaMaskUrl()); }
   async function connect() {
-    if (preview) { set({ step:'form', balanceWei:(500n * 10n ** 18n).toString(), status:'' }); return; }
+    if (preview) { set({ step:'form', balanceWei:'500000', topUpsLeft:isTopup ? 120 : null, status:'' }); return; }
     provider ||= await discovery.getProvider();
     if (!provider) { openMetaMask(); return; }
     await controller.setup();
@@ -84,7 +84,7 @@
     log('payment:failure', error, error?.hash || state.hash);
     controller?.suspendPrompts?.(Wallet.errorCode?.(error) ?? error?.code);
     if (error?.hash && !state.hash) state.hash = error.hash;
-    set({ step:state.hash && !terminal ? 'sending' : 'form', hash:terminal ? null : state.hash, status:UI.errorText(Wallet.errorCode?.(error) ?? error?.code), insufficient:error?.code === 'INSUFFICIENT_BALANCE', balanceWei:error?.balanceWei ?? state.balanceWei });
+    set({ step:state.hash && !terminal ? 'sending' : 'form', hash:terminal ? null : state.hash, status:UI.errorText(Wallet.errorCode?.(error) ?? error?.code, kind), insufficient:error?.code === 'INSUFFICIENT_BALANCE', balanceWei:error?.balanceWei ?? state.balanceWei, gasWei:error?.gasWei ?? state.gasWei });
   }
   async function refreshBalance() {
     // A balance refresh failure must not change a confirmed transfer back to pending.
@@ -109,7 +109,7 @@
         return;
       }
       if (!sender || senderProvider !== provider) {
-        sender = Transfer.createSender({ provider, chainId:Wallet.NETWORK.chainId, diagnostics, storage:window.localStorage });
+        sender = Transfer.createSender({ provider, chainId:Wallet.NETWORK.chainId, token:Wallet.TOKEN, diagnostics, storage:window.localStorage });
         senderProvider = provider;
       }
       controller.pauseAutoPrompts?.(true);
@@ -138,7 +138,7 @@
       if (!state.account) return;
       const nextProvider = await discovery.getProvider();
       if (senderProvider !== nextProvider) {
-        sender = Transfer.createSender({ provider:nextProvider, chainId:Wallet.NETWORK.chainId, diagnostics, storage:window.localStorage });
+        sender = Transfer.createSender({ provider:nextProvider, chainId:Wallet.NETWORK.chainId, token:Wallet.TOKEN, diagnostics, storage:window.localStorage });
         senderProvider = nextProvider; sender.pending?.(submitted.account);
       }
       await sender.check(state.hash); set({ step:'success' }); await refreshBalance(); }
@@ -170,7 +170,7 @@
     if (event.target.id === 'transferRecipient') { state.manualAddress = event.target.value; return; }
     if (event.target.id !== 'transferAmount') return;
     const start = event.target.selectionStart, end = event.target.selectionEnd;
-    const value = event.target.value.replace(kind === 'transfer' ? /[^0-9.]/g : /[^0-9]/g, '');
+    const value = event.target.value.replace(/[^0-9]/g, '');
     set({ value, status:'', insufficient:false });
     const field = document.getElementById('transferAmount'); field?.focus(); field?.setSelectionRange(start, end);
   }
@@ -179,7 +179,7 @@
     discovery = Wallet.discover(window);
     controller = Wallet.createWallet({ lifecycle:window, getProvider:() => discovery.getProvider(), onState:onWallet, readBalanceFromRpc });
     void controller.restore();
-  } else state.balanceWei = (500n * 10n ** 18n).toString();
+  } else state.balanceWei = '500000';
   const refresh = () => { if (!preview && !state.busy && document.visibilityState === 'visible') void controller.refresh(); };
   document.getElementById('balanceButton')?.addEventListener('click', refresh);
 

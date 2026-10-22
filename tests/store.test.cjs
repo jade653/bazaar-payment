@@ -58,7 +58,7 @@ test('store entry opens the app synchronously after missing-wallet detection wit
 test('store polls every five seconds and updates deposits without replacing QR or name input', async () => {
   const History=require('../transaction-history.js');
   const account='0x'+'1'.repeat(40), nodes=new Map(), events={}, windowEvents={}, documentEvents={};
-  let now=Date.now(), balance='1000000000000000000', queries=0, refreshes=0, qrRenders=0, interval, intervalMs, cleared, disposed=false;
+  let now=Date.now(), balance='1000', queries=0, refreshes=0, qrRenders=0, interval, intervalMs, cleared, disposed=false;
   let notify, historyModel, finishQuery;
   const node=id=>{
     if(!nodes.has(id)) {
@@ -75,7 +75,7 @@ test('store polls every five seconds and updates deposits without replacing QR o
   };
   const document={visibilityState:'visible',getElementById:node,addEventListener(type,fn){documentEvents[type]=fn;}};
   const result=()=>({
-    items:balance==='1000000000000000000'?[]:[{hash:'0x'+'a'.repeat(64),blockNumber:'0x2',timestamp:Math.floor(now/1000),direction:'in',valueWei:1000000000000000000n,balanceWei:BigInt(balance)}],
+    items:balance==='1000'?[]:[{hash:'0x'+'a'.repeat(64),blockNumber:'0x2',timestamp:Math.floor(now/1000),direction:'in',valueWei:1000n,balanceWei:BigInt(balance)}],
     lastScannedBlock:queries,balanceWei:balance,settledHashes:[]
   });
   const ready=()=>notify({status:'ready',account,balanceWei:balance});
@@ -107,13 +107,13 @@ test('store polls every five seconds and updates deposits without replacing QR o
   assert.equal(refreshes,1);
   assert.equal(queries,1,'unchanged balance skips recent history RPC before sixty seconds');
   assert.equal(node('storeHistory').writes,initialHistoryWrites,'unchanged history does not touch the DOM');
-  balance='2000000000000000000';finishQuery=true;
+  balance='2000';finishQuery=true;
   now+=5000;interval();await flush();
   assert.equal(queries,2,'deposit starts a history query on the next balance poll');
   assert.equal(node('storeHistory').writes,initialHistoryWrites,'background query keeps existing markup still');
   finishQuery();finishQuery=null;await flush();
-  assert.match(node('storeHistory').innerHTML,/\+1 MST/);
-  assert.equal(node('balanceValue').textContent,'2 MST');
+  assert.match(node('storeHistory').innerHTML,/\+1,000 MST/);
+  assert.equal(node('balanceValue').textContent,'2,000 MST');
   assert.equal(node('storeScreen').writes,screenWrites);
   assert.equal(qrRenders,1);
   assert.equal(node('storeName').value,'아직 저장하지 않은 이름');

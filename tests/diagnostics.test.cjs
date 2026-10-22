@@ -1,6 +1,7 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
 const {createDiagnostics,diagnosticsFor,createRpcBalanceReader}=require('../wallet.js');
+const {TEST_TOKEN}=require('./fixtures.cjs');
 const hash='0x'+'a'.repeat(64);
 function storage(){const data=new Map();return {getItem:key=>data.get(key)||null,setItem:(key,value)=>data.set(key,value)};}
 test('diagnostics preserve failure stage, chain, nested original errors and received hash across navigation',()=>{
@@ -36,6 +37,6 @@ test('denied clipboard access exposes selectable diagnostic text',async()=>{
   await u.events['[data-wallet-copy]:click']();assert.equal(u.selected(),true);assert.equal(u.node('textarea').value,d.text());
 });
 test('public balance RPC retains its original error code/message',async()=>{
-  const read=createRpcBalanceReader({fetchImpl:async()=>({ok:true,json:async()=>({error:{code:-32000,message:'Original upstream error'}})})});
+  const read=createRpcBalanceReader({token:TEST_TOKEN,fetchImpl:async()=>({ok:true,json:async()=>({error:{code:-32000,message:'Original upstream error'}})})});
   await assert.rejects(read('0x'+'1'.repeat(40)),{code:-32000,message:'Original upstream error'});
 });

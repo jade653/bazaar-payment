@@ -10,9 +10,34 @@
     nativeCurrency: Object.freeze({ name: 'MST', symbol: 'MST', decimals: 18 }),
     rpcUrls: Object.freeze(['https://block.mustree.kr'])
   });
+  // wMST (ERC-20, 1 wMST = 1 KRW, 0 decimals). Balances and transfers use this token;
+  // native MST is only spent on fees. Fill address/deployBlock from setup.html (DEPLOY.md).
+  const TOKEN = Object.freeze({
+    address: null,
+    deployBlock: 0,
+    symbol: 'wMST', decimals: 0,
+    selectors: Object.freeze({ transfer: '0xa9059cbb', transferWithGas: '0xf620de7c', balanceOf: '0x70a08231', totalSupply: '0x18160ddd' }),
+    transferTopic: '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef',
+    // Fee policy. The wallet is asked to use these fee caps on every send (chain 7601:
+    // base fee 7 wei, priority 100 wei). The reserve figures are what the wallet must hold
+    // before it lets one transfer through (gas limit x max fee); they come from the
+    // measurement in setup.html and the estimate in tools/estimate-wmst-gas.cjs.
+    // Initial values: tools/estimate-wmst-gas.cjs on 2026-10-22 (transfer 51,440 gas, top-up 88,278 gas,
+    // x1.5 wallet padding x 1,000 wei). Replace with the setup.html measurement after deployment.
+    gasPolicy: Object.freeze({
+      maxFeePerGasWei: '1000',
+      maxPriorityFeePerGasWei: '100',
+      transfersPerTopUp: 20,
+      transferReserveWei: '77160000',
+      topUpReserveWei: '132417000'
+    })
+  });
   const ALLOWED = new Set(['eth_accounts', 'eth_requestAccounts', 'eth_chainId',
-    'eth_getBalance', 'wallet_switchEthereumChain', 'wallet_addEthereumChain']);
+    'eth_getBalance', 'eth_call', 'wallet_switchEthereumChain', 'wallet_addEthereumChain']);
+  const READS = ['eth_accounts', 'eth_chainId', 'eth_getBalance', 'eth_call'];
   const addressOK = value => typeof value === 'string' && /^0x[0-9a-f]{40}$/i.test(value);
+  const hexOK = value => typeof value === 'string' && /^0x[0-9a-f]+$/i.test(value);
+  const balanceOfData = (token, account) => token.selectors.balanceOf + account.slice(2).toLowerCase().padStart(64, '0');
   const sameChain = (a, b) => { try { return BigInt(a) === BigInt(b); } catch { return false; } };
   function errorCode(error) {
     const queue = [error];
@@ -27,22 +52,29 @@
   }
   function failure(code) { return Object.assign(new Error(code), { code }); }
   // Same 8s HTTP budget as history; injected MetaMask reads retain their own timeout.
-  function createRpcBalanceReader({ fetchImpl, network = NETWORK, timeout = 8000 }) {
+  // Resolves { balanceWei, gasWei }: wMST units and native MST, both as hex strings.
+  function createRpcBalanceReader({ fetchImpl, network = NETWORK, token = TOKEN, timeout = 8000 }) {
     return async function readRpcBalance(account) {
       if (!addressOK(account) || typeof fetchImpl !== 'function') throw failure('RPC_UNAVAILABLE');
+      if (token && !addressOK(token.address)) throw failure('TOKEN_NOT_CONFIGURED');
       const controller = typeof AbortController === 'function' ? new AbortController() : null;
       const timer = controller ? setTimeout(() => controller.abort(), timeout) : null;
+      const calls = [{ jsonrpc: '2.0', id: 1, method: 'eth_getBalance', params: [account, 'latest'] }];
+      if (token) calls.push({ jsonrpc: '2.0', id: 2, method: 'eth_call', params: [{ to: token.address, data: balanceOfData(token, account) }, 'latest'] });
       try {
         const response = await fetchImpl(network.rpcUrls[0], {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_getBalance', params: [account, 'latest'] }),
-          ...(controller ? { signal: controller.signal } : {})
+          body: JSON.stringify(calls), ...(controller ? { signal: controller.signal } : {})
         });
         if (!response.ok) throw failure('RPC_HTTP_ERROR');
         const body = await response.json();
-        if (body.error) throw Object.assign(new Error(body.error.message || 'RPC balance query failed'), { code:body.error.code });
-        if (typeof body.result !== 'string' || !/^0x[0-9a-f]+$/i.test(body.result)) throw failure('INVALID_BALANCE');
-        return body.result;
+        const items = Array.isArray(body) ? body : [body];
+        const failed = items.find(item => item && item.error);
+        if (failed) throw Object.assign(new Error(failed.error.message || 'RPC balance query failed'), { code:failed.error.code });
+        const byId = new Map(items.map(item => [item && item.id, item && item.result]));
+        const gasWei = byId.get(1), balanceWei = token ? byId.get(2) : null;
+        if (!hexOK(gasWei) || (token && !hexOK(balanceWei))) throw failure('INVALID_BALANCE');
+        return { balanceWei, gasWei };
       } finally { if (timer) clearTimeout(timer); }
     };
   }
@@ -136,18 +168,19 @@
     return diagnostics;
   }
 
-  function createWallet({ getProvider, onState = () => {}, network = NETWORK, readTimeout = 12000,
+  // token:null reads only the native balance (setup page); otherwise balanceWei is wMST units and gasWei native MST.
+  function createWallet({ getProvider, onState = () => {}, network = NETWORK, token = TOKEN, readTimeout = 12000,
     readBalanceFromRpc = null, lifecycle = null, diagnostics = lifecycle ? diagnosticsFor(lifecycle) : null }) {
     let provider, activeTask, generation = 0, disposed = false, promptHold = '', actualChainId = null;
     let eventTimer, syncAgain = false, autoPaused = false;
-    let state = { status:'idle', account:null, balanceWei:null };
+    let state = { status:'idle', account:null, balanceWei:null, gasWei:null };
     let storage; try { storage = lifecycle?.sessionStorage; const saved = storage?.getItem('bazaar-wallet-prompt-hold');
       if (['cancelled','pending','error','needs-network'].includes(saved)) promptHold = saved; } catch {}
     function hold(value) { promptHold = value; try { storage?.setItem('bazaar-wallet-prompt-hold', value); } catch {} }
     const log = (stage, error) => diagnostics?.record({ stage, chainId:actualChainId, error });
     const emit = (status, data = {}) => {
       if (disposed) return;
-      state = { status, account:null, balanceWei:null, chainId:actualChainId, ...data };
+      state = { status, account:null, balanceWei:null, gasWei:null, chainId:actualChainId, ...data };
       const panel = diagnostics?.panel, label = panel?.querySelector('[data-wallet-status]');
       if (label) label.textContent = status === 'ready' ? 'Mustree 연결됨'
         : status === 'cancelled' ? '연결을 취소했어요. 준비되면 지갑 연결 다시 시도를 눌러주세요.'
@@ -160,14 +193,14 @@
     async function call(method, params) {
       if (!ALLOWED.has(method)) throw failure('METHOD_NOT_ALLOWED');
       let timer;
-      if (!['eth_accounts','eth_chainId','eth_getBalance'].includes(method)) log(method + ':request');
+      if (!READS.includes(method)) log(method + ':request');
       try {
         const request = Promise.resolve().then(() => provider.request({ method, ...(params ? { params } : {}) }));
-        const result = ['eth_accounts','eth_chainId','eth_getBalance'].includes(method)
+        const result = READS.includes(method)
           ? await Promise.race([request, new Promise((_, reject) => { timer = setTimeout(() => reject(failure('READ_TIMEOUT')), readTimeout); })])
           : await request;
         if (method === 'eth_chainId') actualChainId = result;
-        if (method !== 'eth_accounts' && method !== 'eth_getBalance') log(method + ':success'); return result;
+        if (!READS.includes(method) || method === 'eth_chainId') log(method + ':success'); return result;
       } catch (error) { log(method + ':failure', error); throw error; }
       finally { clearTimeout(timer); }
     }
@@ -202,20 +235,24 @@
       if (!addressOK(accounts?.[0])) throw failure('NO_ACCOUNT');
       const chain = await call('eth_chainId'); assertCurrent(revision);
       if (!sameChain(chain, network.chainId)) throw failure('WRONG_CHAIN');
+      if (token && !addressOK(token.address)) throw failure('TOKEN_NOT_CONFIGURED');
       let raw;
-      try { raw = await call('eth_getBalance', [accounts[0], 'latest']); }
-      catch (error) {
+      try {
+        const gasWei = await call('eth_getBalance', [accounts[0], 'latest']);
+        const balanceWei = token ? await call('eth_call', [{ to:token.address, data:balanceOfData(token, accounts[0]) }, 'latest']) : null;
+        raw = { balanceWei, gasWei };
+      } catch (error) {
         assertCurrent(revision); if (!readBalanceFromRpc) throw error;
         log('balance:rpc-fallback');
         try { raw = await readBalanceFromRpc(accounts[0]); } catch (rpcError) { log('balance:rpc-failure', rpcError); throw rpcError; }
       }
       assertCurrent(revision);
-      if (typeof raw !== 'string' || !/^0x[0-9a-f]+$/i.test(raw)) throw failure('INVALID_BALANCE');
+      if (!raw || !hexOK(raw.gasWei) || (token && !hexOK(raw.balanceWei))) throw failure('INVALID_BALANCE');
       const [latestAccounts, latestChain] = await Promise.all([call('eth_accounts'), call('eth_chainId')]);
       assertCurrent(revision);
       if (latestAccounts?.[0]?.toLowerCase() !== accounts[0].toLowerCase()) throw failure('STALE_ACCOUNT');
       if (!sameChain(latestChain, network.chainId)) throw failure('WRONG_CHAIN');
-      hold(''); emit('ready', { account:accounts[0], balanceWei:BigInt(raw).toString() });
+      hold(''); emit('ready', { account:accounts[0], balanceWei:token ? BigInt(raw.balanceWei).toString() : null, gasWei:BigInt(raw.gasWei).toString() });
     }
     function report(error, revision) {
       if (disposed || generation !== revision || error?.code === 'STALE') return;
@@ -287,5 +324,5 @@
       }
     };
   }
-  return { NETWORK, createWallet, createRpcBalanceReader, discover, errorCode, createDiagnostics, diagnosticsFor };
+  return { NETWORK, TOKEN, createWallet, createRpcBalanceReader, discover, errorCode, createDiagnostics, diagnosticsFor };
 });

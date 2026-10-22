@@ -6,6 +6,7 @@ const vm = require('node:vm');
 const Wallet = require('../wallet.js');
 const Transfer = require('../transfer-core.js');
 const UI = require('../payment-ui.js');
+const { TEST_TOKEN } = require('./fixtures.cjs');
 const A = '0x'+'1'.repeat(40), B = '0x'+'2'.repeat(40), C = '0x'+'3'.repeat(40), hash = '0x'+'a'.repeat(64);
 const flush = () => new Promise(resolve => setTimeout(resolve, 20));
 function storage() { const data = new Map(); return { getItem:key=>data.get(key)||null, setItem:(key,value)=>data.set(key,value), removeItem:key=>data.delete(key) }; }
@@ -17,6 +18,7 @@ class Provider extends EventEmitter {
     if(method==='eth_accounts') return this.accounts;
     if(method==='eth_chainId') return this.chain;
     if(method==='eth_getBalance') return '0x56bc75e2d63100000';
+    if(method==='eth_call') return '0x186a0';
     if(method==='eth_requestAccounts') { this.accounts=[A]; this.emit('accountsChanged',this.accounts); return this.accounts; }
     if(method==='wallet_addEthereumChain') { this.registered=true; return null; }
     if(method==='wallet_switchEthereumChain') { if(!this.registered)throw {code:4902,message:'Unknown chain'}; this.chain=params[0].chainId; this.emit('chainChanged',this.chain); return null; }
@@ -33,8 +35,8 @@ function page({provider = new Provider(), local = storage(), session = storage()
   const document={visibilityState:'visible',getElementById:node,querySelector:selector=>selector==='[data-transfer-kind]'?node('screen'):node('heading'),addEventListener(type,fn){events['document:'+type]=fn;},removeEventListener(){}};
   const diagnostics=Wallet.createDiagnostics({storage:session});
   const window={ document, localStorage:local,sessionStorage:session,
-    BazaarWallet:{...Wallet,diagnosticsFor:()=>diagnostics,discover:()=>({getProvider:async()=>provider,dispose(){}}),
-      createWallet(options){controller=Wallet.createWallet({...options,diagnostics});return controller;}},
+    BazaarWallet:{...Wallet,TOKEN:TEST_TOKEN,diagnosticsFor:()=>diagnostics,discover:()=>({getProvider:async()=>provider,dispose(){}}),
+      createWallet(options){controller=Wallet.createWallet({...options,token:TEST_TOKEN,diagnostics});return controller;}},
     BazaarUI:UI,BazaarTransfer:{...Transfer,createSender:options=>Transfer.createSender({...options,maxPolls:1,readTimeout:20})},
     BazaarHistory:{recordSent(){}},BazaarScanner:{create(){return {start(){},stop(){},dispose(){}};}},
     fetch:async()=>{throw new Error('Unexpected HTTP');},addEventListener(type,fn){events[type]=fn;},removeEventListener(){}};
@@ -75,7 +77,7 @@ for(const code of [4001,-32002])test(`approval ${code} is held across resume/eve
 test('result failure keeps hash, survives reload and checks the original payment instead of sending again',async t=>{
   const provider=new Provider();provider.hooks.eth_getTransactionReceipt=()=>{throw {code:-32000,message:'Receipt RPC unavailable'};};
   let p=page({provider});t.after(()=>p.dispose());await flush();await p.click('submit');
-  assert.match(p.screen.innerHTML,/결과 다시 확인/);assert.match(p.screen.innerHTML,new RegExp(hash));
+  assert.match(p.screen.innerHTML,/결과 다시 확인/);assert.doesNotMatch(p.screen.innerHTML,new RegExp(hash),'participants never see transaction hashes');
   assert.equal(provider.count('eth_sendTransaction'),1);
   assert.ok(p.diagnostics.snapshot().some(row=>row.stage==='receipt:failure'&&row.hash===hash&&row.errors[0].code==='-32000'));
   const {local,session}=p;p.dispose();p=page({provider,local,session});await flush();await p.click('submit');

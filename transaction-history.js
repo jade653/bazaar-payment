@@ -27,8 +27,18 @@
     try { getStorage(storage)?.setItem(sentKey(chainId, account), JSON.stringify(rows.slice(-200))); } catch {}
   }
   const failure = code => Object.assign(new Error(code), { code });
-  async function recentTransfers(fetchImpl, { account, rpcUrl, blockWindow = 1200, fromBlock, sent = [], requestTimeout = RPC_TIMEOUT }) {
+  const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+  const LOG_CHUNK = 50000;
+  // First visit covers one day of two-second blocks; later syncs continue from the cursor.
+  const DEFAULT_WINDOW = 43200;
+  const hexOK = value => typeof value === 'string' && /^0x[0-9a-f]+$/i.test(value);
+  const topicOf = account => '0x' + account.slice(2).toLowerCase().padStart(64, '0');
+  const topicAddress = topic => '0x' + String(topic || '').slice(-40);
+  // wMST Transfer events for one account, read from the public RPC log index. Row balances
+  // are derived from the pinned head balance and the complete event set, not from historical state.
+  async function recentTransfers(fetchImpl, { account, rpcUrl, token, blockWindow = DEFAULT_WINDOW, fromBlock, sent = [], requestTimeout = RPC_TIMEOUT }) {
     if (typeof fetchImpl !== 'function' || !ADDRESS.test(account || '')) throw failure('INVALID_ADDRESS');
+    if (!token || !ADDRESS.test(token.address || '')) throw failure('TOKEN_NOT_CONFIGURED');
     let nextId = 1;
     async function batch(calls, optional = false) {
       const payload = calls.map(call => ({ jsonrpc:'2.0', id:nextId++, method:call.method, params:call.params }));
@@ -58,55 +68,69 @@
       } finally { clearTimeout(timer); }
     }
     const [latestHex] = await batch([{method:'eth_blockNumber',params:[]}]);
-    if (!latestHex) throw failure('HISTORY_UNAVAILABLE');
+    if (!hexOK(latestHex)) throw failure('HISTORY_UNAVAILABLE');
     const latest = Number(BigInt(latestHex));
     // A cursor is committed only after the entire requested range succeeds.
-    const lower = Number.isSafeInteger(fromBlock) && fromBlock <= latest + 1 ? Math.max(0, fromBlock) : Math.max(0, latest - blockWindow + 1);
-    const found = [], settledHashes = [];
-    for (let high = latest; high >= lower; high -= 100) {
-      const low = Math.max(lower, high - 99), calls = [];
-      for (let number = high; number >= low; number--) calls.push({method:'eth_getBlockByNumber',params:['0x'+number.toString(16),true]});
-      const blocks = await batch(calls);
-      const candidates = [];
-      for (const block of blocks) for (const tx of [...(block?.transactions || [])].reverse()) {
-        const from = String(tx.from || '').toLowerCase(), to = String(tx.to || '').toLowerCase(), own = account.toLowerCase();
-        if (from !== own && to !== own) continue;
-        candidates.push({ hash:tx.hash, blockNumber:tx.blockNumber || block.number, timestamp:Number(BigInt(block.timestamp)), direction:to===own?'in':'out', valueWei:BigInt(tx.value || '0x0') });
-      }
-      if (!candidates.length) continue;
-      const receipts = await batch(candidates.map(item => ({method:'eth_getTransactionReceipt',params:[item.hash]})));
-      for (let index = 0; index < candidates.length; index++) {
-        if (['0x1','0x01',1].includes(receipts[index].status)) found.push(candidates[index]);
+    const floor = Number.isSafeInteger(token.deployBlock) ? token.deployBlock : 0;
+    const lower = Math.max(floor, Number.isSafeInteger(fromBlock) && fromBlock <= latest + 1 ? Math.max(0, fromBlock) : Math.max(0, latest - blockWindow + 1));
+    const me = topicOf(account), own = account.toLowerCase(), tokenAddress = token.address.toLowerCase(), topic = token.transferTopic || TRANSFER_TOPIC;
+    const found = new Map();
+    const rowFrom = (log, hash) => {
+      if (!log || log.removed || String(log.address).toLowerCase() !== tokenAddress || log.topics?.[0] !== topic) return null;
+      const from = topicAddress(log.topics[1]), to = topicAddress(log.topics[2]);
+      if (from.toLowerCase() !== own && to.toLowerCase() !== own) return null;
+      const direction = from.toLowerCase() === own ? 'out' : 'in';
+      return { hash, blockNumber:log.blockNumber, logIndex:Number(BigInt(log.logIndex || '0x0')), direction, counterparty:direction === 'out' ? to : from, valueWei:BigInt(log.data || '0x0') };
+    };
+    for (let low = lower; low <= latest; low += LOG_CHUNK) {
+      const high = Math.min(latest, low + LOG_CHUNK - 1);
+      const range = { address:token.address, fromBlock:'0x' + low.toString(16), toBlock:'0x' + high.toString(16) };
+      const [outgoing, incoming] = await batch([
+        {method:'eth_getLogs',params:[{ ...range, topics:[topic, me] }]},
+        {method:'eth_getLogs',params:[{ ...range, topics:[topic, null, me] }]}
+      ]);
+      for (const log of [...outgoing, ...incoming]) {
+        if (!HASH.test(log?.transactionHash || '')) continue;
+        const row = rowFrom(log, log.transactionHash);
+        if (row) found.set(log.transactionHash.toLowerCase() + ':' + row.logIndex, row);
       }
     }
-    // Known outgoing hashes also recover transactions outside the initial block window.
-    for (const row of sent) {
-      if (!HASH.test(row.hash || '')) continue;
-      const [receipt] = await batch([{method:'eth_getTransactionReceipt',params:[row.hash]}], true);
-      if (!receipt || !receipt.blockNumber || BigInt(receipt.blockNumber) > BigInt(latestHex)) continue;
-      if (!['0x0','0x00',0,'0x1','0x01',1].includes(receipt.status)) throw failure('HISTORY_UNAVAILABLE');
-      settledHashes.push(row.hash.toLowerCase());
-      if (!['0x1','0x01',1].includes(receipt.status) || found.some(item => item.hash.toLowerCase() === row.hash.toLowerCase())) continue;
-      const [tx, block] = await batch([{method:'eth_getTransactionByHash',params:[row.hash]}, {method:'eth_getBlockByNumber',params:[receipt.blockNumber,false]}]);
-      if (String(tx.from).toLowerCase() !== account.toLowerCase()) throw failure('HISTORY_UNAVAILABLE');
-      found.push({hash:row.hash,blockNumber:receipt.blockNumber,timestamp:Number(BigInt(block.timestamp)),direction:String(tx.to).toLowerCase() === account.toLowerCase() ? 'in' : 'out',valueWei:BigInt(tx.value || '0x0')});
-    }
-    let balances;
-    try { balances = found.length ? await batch(found.map(item => ({method:'eth_getBalance',params:[account,item.blockNumber]})), true) : []; }
-    catch { balances = []; }
-    const items = found.map((item,index) => ({...item,balanceWei:/^0x[0-9a-f]+$/i.test(balances[index] || '') ? BigInt(balances[index]) : null}));
+    const items = [...found.values()];
+    const blocks = [...new Set(items.map(item => item.blockNumber))];
+    const headers = blocks.length ? await batch(blocks.map(number => ({method:'eth_getBlockByNumber',params:[number,false]}))) : [];
+    const timestamps = new Map(blocks.map((number, index) => [number, Number(BigInt(headers[index]?.timestamp || '0x0'))]));
+    for (const item of items) item.timestamp = timestamps.get(item.blockNumber);
     // Pin the comparison balance to the same block as the completed scan.
-    const [balance] = await batch([{method:'eth_getBalance',params:[account,latestHex]}]);
-    if (!/^0x[0-9a-f]+$/i.test(balance)) throw failure('HISTORY_UNAVAILABLE');
+    const [balance] = await batch([{method:'eth_call',params:[{ to:token.address, data:token.selectors.balanceOf + me.slice(2) }, latestHex]}]);
+    if (!hexOK(balance) || balance.length < 3) throw failure('HISTORY_UNAVAILABLE');
+    items.sort((a, b) => Number(BigInt(b.blockNumber)) - Number(BigInt(a.blockNumber)) || b.logIndex - a.logIndex);
+    let running = BigInt(balance);
+    for (const item of items) { item.balanceWei = running; running += item.direction === 'in' ? -item.valueWei : item.valueWei; }
+    // Known outgoing hashes also recover transfers outside the scanned range.
+    const settledHashes = [], seen = new Set(items.map(item => item.hash.toLowerCase()));
+    for (const row of sent) {
+      const hash = String(row?.hash || '');
+      if (!HASH.test(hash)) continue;
+      if (seen.has(hash.toLowerCase())) { settledHashes.push(hash); continue; }
+      const [receipt] = await batch([{method:'eth_getTransactionReceipt',params:[hash]}], true);
+      if (!receipt) continue;
+      if (['0x1','0x01',1].includes(receipt.status)) {
+        const [header] = await batch([{method:'eth_getBlockByNumber',params:[receipt.blockNumber,false]}], true);
+        for (const log of receipt.logs || []) {
+          const item = rowFrom(log, receipt.transactionHash || hash);
+          if (item) items.push({ ...item, timestamp:Number(BigInt(header?.timestamp || '0x0')), balanceWei:null });
+        }
+      }
+      settledHashes.push(hash);
+    }
     return { items, lastScannedBlock:latest, balanceWei:BigInt(balance).toString(), settledHashes };
   }
   // A request belongs to one account. Late responses must never replace another account's history.
   function create({ query, onChange = () => {}, chainId = '', limit = 20, storage, now = Date.now, syncInterval = SYNC_INTERVAL }) {
     let state = { account:null, items:[], loading:false, error:'' }, revision = 0, active = null, activeBalance, activeForce;
     try { if (storage === undefined) storage = globalThis.localStorage; } catch { storage = null; }
-    const storageKey = account => 'bazaar-history-v1:' + chainId + ':' + account;
-    const syncKey = account => 'bazaar-sync-v1:' + chainId + ':' + account;
-    const errorKey = account => 'bazaar-history-error-v1:' + chainId + ':' + account;
+    const syncKey = account => 'bazaar-sync-v2:' + chainId + ':' + account;
+    const errorKey = account => 'bazaar-history-error-v2:' + chainId + ':' + account;
     const failedAccounts = new Map();
     const errorMessage = '최신 거래 내역을 불러오지 못했어요. 다시 확인해 주세요.';
     function previouslyFailed(account) {
@@ -148,7 +172,7 @@
     }
     function read(account) {
       try {
-        const items = readMeta(account).items || JSON.parse(storage?.getItem(storageKey(account)) || '[]');
+        const items = readMeta(account).items;
         return Array.isArray(items) ? merge(items) : [];
       } catch { return []; }
     }
@@ -199,5 +223,5 @@
     }
     return { load, clear, snapshot: () => ({ ...state }) };
   }
-  return { create, recentTransfers, recordSent, sentTransactions, SYNC_INTERVAL };
+  return { create, recentTransfers, recordSent, sentTransactions, SYNC_INTERVAL, DEFAULT_WINDOW };
 });

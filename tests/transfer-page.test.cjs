@@ -5,8 +5,9 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const UI = require('../payment-ui.js');
 const Transfer = require('../transfer-core.js');
+const { TEST_TOKEN, hex } = require('./fixtures.cjs');
 const account = '0x' + '1'.repeat(40), recipient = '0x' + '2'.repeat(40), hash = '0x' + 'a'.repeat(64);
-function harness({ kind = 'payment', preview = false, name = '', to = recipient, value = '5000', mst = '5', autoScan = false, balanceWei = 100n * 10n ** 18n, delayProvider = false, noProvider = false, refreshFails = false, receipt = { status:'0x1' } } = {}) {
+function harness({ kind = 'payment', preview = false, name = '', to = recipient, value = '5000', mst = '5', autoScan = false, balanceWei = 100000n, gasWei = 10n ** 15n, delayProvider = false, noProvider = false, refreshFails = false, receipt = { status:'0x1' } } = {}) {
   const events = {}, nodes = new Map(), assigned = [], requests = [], saved = new Map();
   const storage = {getItem:key => saved.get(key) || null,setItem:(key,value) => saved.set(key,value)};
   const History = require('../transaction-history.js');
@@ -17,17 +18,17 @@ function harness({ kind = 'payment', preview = false, name = '', to = recipient,
   const provider = { request:async request => {
     requests.push(request);
     if (request.method === 'eth_getTransactionReceipt') assert.equal(JSON.parse(saved.get('bazaar-sent-v1:0x1db1:' + account))[0].hash,hash);
-    return ({ eth_accounts:[account], eth_chainId:'0x1db1', eth_getBalance:'0x' + balanceWei.toString(16), eth_sendTransaction:hash, eth_getTransactionReceipt:receipt })[request.method];
+    return ({ eth_accounts:[account], eth_chainId:'0x1db1', eth_getBalance:hex(gasWei), eth_call:hex(balanceWei), eth_sendTransaction:hash, eth_getTransactionReceipt:receipt })[request.method];
   } };
   let walletState, resolveProvider, scannerOptions, setups = 0, scannerStarts = 0;
   const providerTask = delayProvider ? new Promise(resolve => { resolveProvider = resolve; }) : Promise.resolve(noProvider ? null : provider);
   const wallet = {
-    NETWORK:{ chainId:'0x1db1' },
+    NETWORK:{ chainId:'0x1db1' }, TOKEN:TEST_TOKEN,
     discover() { assert.equal(preview, false); return { getProvider:() => providerTask, dispose() {} }; },
     createRpcBalanceReader() { assert.equal(preview, false); return async () => '0x0'; },
     createWallet({ onState }) {
       assert.equal(preview, false); walletState = onState;
-      const ready = () => onState({ status:'ready', account, balanceWei:'100000000000000000000' });
+      const ready = () => onState({ status:'ready', account, balanceWei:'100000', gasWei:gasWei.toString() });
       return { restore:() => noProvider ? onState({status:'unavailable'}) : ready(), setup() { setups++; ready(); }, refresh() { if (refreshFails) throw new Error('balance refresh'); ready(); }, dispose() {} };
     }
   };
@@ -56,7 +57,7 @@ test('a scanned store QR displays its name and an unnamed replacement clears it'
   assert.doesNotMatch(page.screen.innerHTML, /사랑 분식/);
 });
 test('insufficient payment shows one top-up dialog with the latest checked balance and sends nothing', async () => {
-  const page=harness({name:'사랑 분식', balanceWei:10n ** 18n});
+  const page=harness({name:'사랑 분식', balanceWei:1n});
   await page.click('submit');
   assert.match(page.screen.innerHTML, /<dialog class="balance-dialog"/);
   assert.match(page.screen.innerHTML, /잔액이 부족합니다\./);
@@ -72,29 +73,42 @@ test('insufficient payment shows one top-up dialog with the latest checked balan
   await page.click('topup');
   assert.equal(page.assigned.at(-1), '/#receive');
 });
-test('the top-up scanner accepts a receive deep link and keeps the top-up bonus', async () => {
+test('the top-up scanner accepts a receive deep link and charges exactly the cash amount', async () => {
   const page = harness({kind:'topup', preview:true});
   await page.click('connect');
+  assert.match(page.screen.innerHTML, /수수료 잔량/);
   await page.click('scan');
   assert.equal(page.scan(Transfer.receiveLink(recipient, {topup:true})), true);
   assert.match(page.screen.innerHTML, new RegExp(recipient));
   assert.match(page.screen.innerHTML, /value="5000"/);
   await page.click('submit');
-  assert.match(page.screen.innerHTML, /충전 완료 · 10% 보너스 포함/);
-  assert.match(page.screen.innerHTML, /5\.5 MST/);
+  assert.match(page.screen.innerHTML, /충전 완료/);
+  assert.doesNotMatch(page.screen.innerHTML, /보너스/);
+  assert.match(page.screen.innerHTML, /5,000 MST/);
   assert.equal(page.requests.length, 0);
 });
-for (const [value, displayed, expectedWei] of [['1','0.001',1100000000000000n],['1505','1.656',1655500000000000000n]]) {
-  test(`${value} won top-up enables submission and sends the exact bonus while rounding only its display`, async () => {
+for (const [value, displayed] of [['1','1'],['1505','1,505']]) {
+  test(`${value} won top-up sends the same wMST amount plus the fixed gas allowance in one transaction`, async () => {
     const page = harness({kind:'topup', value});
     assert.ok(page.screen.innerHTML.includes('data-transfer="submit">'+displayed+' MST 충전하기</button>'));
+    assert.match(page.screen.innerHTML, /수수료 잔량<\/span><strong>약 [\d,]+회 충전 가능/);
     await page.click('submit');
     const sends = page.requests.filter(request=>request.method==='eth_sendTransaction');
     assert.equal(sends.length,1);
-    assert.equal(BigInt(sends[0].params[0].value),expectedWei+50000000n);
-    assert.match(page.screen.innerHTML,/충전 완료 · 10% 보너스 포함/);
+    assert.equal(sends[0].params[0].to,TEST_TOKEN.address);
+    assert.equal(sends[0].params[0].data,TEST_TOKEN.selectors.transferWithGas+recipient.slice(2).padStart(64,'0')+BigInt(value).toString(16).padStart(64,'0'));
+    assert.equal(BigInt(sends[0].params[0].value),Transfer.gasSupportWei(TEST_TOKEN));
+    assert.match(page.screen.innerHTML,/충전 완료/);
+    assert.doesNotMatch(page.screen.innerHTML,/보너스|0x[0-9a-f]{64}/);
   });
 }
+test('a customer without fee MST sees a distinct error and nothing is sent', async () => {
+  const page = harness({ gasWei:0n });
+  await page.click('submit');
+  assert.equal(page.requests.filter(item=>item.method==='eth_sendTransaction').length, 0);
+  assert.match(page.screen.innerHTML, /수수료 잔액이 부족해요/);
+  assert.doesNotMatch(page.screen.innerHTML, /<dialog/);
+});
 for (const kind of ['payment', 'topup', 'transfer']) {
   test(`${kind} offers the same direct app entry without requiring an amount`, () => {
     const page = harness({kind, noProvider:true, to:'', value:'', mst:'', autoScan:true});
@@ -114,12 +128,12 @@ for (const kind of ['payment', 'topup', 'transfer']) {
     const changed = '0x' + '3'.repeat(40);
     await page.click('scan');
     page.scan(Transfer.receiveLink(changed, {name:'새 가게'}));
-    page.input(kind === 'transfer' ? '12.345' : '10000');
+    page.input('10000');
     page.walletState({status:'unavailable'});
     const url = new URL(page.screen.innerHTML.match(/href="([^"]+)"/)[1].replaceAll('&amp;', '&'));
     assert.equal(url.searchParams.get('to'), changed);
     assert.equal(url.searchParams.get('name'), '새 가게');
-    assert.equal(url.searchParams.get(kind === 'transfer' ? 'mst' : 'won'), kind === 'transfer' ? '12.345' : '10000');
+    assert.equal(url.searchParams.get(kind === 'transfer' ? 'mst' : 'won'), '10000');
     assert.equal(page.requests.length, 0);
   });
   test(`${kind} uses the shared UI and sender and retains success after balance refresh`, async () => {
@@ -129,7 +143,7 @@ for (const kind of ['payment', 'topup', 'transfer']) {
     assert.equal(page.requests.filter(item => item.method === 'eth_sendTransaction').length, 1);
     assert.equal(JSON.parse(page.saved.get('bazaar-sent-v1:0x1db1:' + account))[0].hash,hash);
     assert.match(page.screen.innerHTML, /class="operator-success"/);
-    assert.match(page.screen.innerHTML, kind === 'topup' ? /5\.5 MST/ : /5 MST/);
+    assert.match(page.screen.innerHTML, kind === 'transfer' ? /5 MST/ : /5,000 MST/);
   });
   test(`${kind} preview cannot discover a wallet or send real transactions`, async () => {
     const page = harness({ kind, preview:true });
@@ -158,7 +172,7 @@ test('revoked accounts require setup before another submission', async () => {
   const page = harness();
   page.walletState({ status:'idle' });
   assert.equal(page.screen.innerHTML.includes('— MST'), true);
-  assert.doesNotMatch(page.screen.innerHTML, /100 MST/);
+  assert.doesNotMatch(page.screen.innerHTML, /100,000 MST/);
   await page.click('submit');
   assert.equal(page.setups(), 1);
 });

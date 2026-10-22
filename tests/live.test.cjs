@@ -7,6 +7,7 @@ const test = require('node:test');
 const vm = require('node:vm');
 const UI = require('../payment-ui.js');
 const History = require('../transaction-history.js');
+const { TEST_TOKEN } = require('./fixtures.cjs');
 
 function liveHarness({ query = async () => ({items:[],lastScannedBlock:0,balanceWei:'0'}), hash = '#welcome', provider = null, storage } = {}) {
   const listeners = {};
@@ -40,12 +41,12 @@ function liveHarness({ query = async () => ({items:[],lastScannedBlock:0,balance
   function QRCode(_target, options) { qrOptions = options; }
   QRCode.CorrectLevel = { M: 0 };
   const Wallet = {
-    NETWORK:{ rpcUrls:['https://rpc.test'] },
-    createRpcBalanceReader() { return async () => '0x0'; },
+    NETWORK:{ rpcUrls:['https://rpc.test'] }, TOKEN:TEST_TOKEN,
+    createRpcBalanceReader() { return async () => ({ balanceWei:'0x0', gasWei:'0x0' }); },
     discover() { return { getProvider:async()=>provider, dispose() {} }; },
     createWallet(options) {
       walletState = options.onState;
-      controller = provider ? require('../wallet.js').createWallet(options) : { setup() {}, refresh() {}, restore() {}, dispose() {} };
+      controller = provider ? require('../wallet.js').createWallet({ ...options, token:TEST_TOKEN }) : { setup() {}, refresh() {}, restore() {}, dispose() {} };
       return controller;
     },
   };
@@ -120,17 +121,18 @@ test('top-up participates in browser history and returns home on Back', () => {
 for (const route of ['button','back','direct']) {
   test(`returning from receive via ${route} refreshes the real wallet and history without a manual refresh`, async t => {
     const account='0x'+'1'.repeat(40), methods=[];
-    let raw='0x'+(10n**18n).toString(16), releaseBalance, historyReads=0;
+    let raw='0x1', releaseBalance, historyReads=0;
     const provider={request:async({method})=>{
       methods.push(method);
       if(method==='eth_accounts')return [account];
       if(method==='eth_chainId')return '0x1db1';
-      if(method==='eth_getBalance')return raw === null ? new Promise(resolve=>{releaseBalance=resolve;}) : raw;
+      if(method==='eth_getBalance')return '0x0';
+      if(method==='eth_call')return raw === null ? new Promise(resolve=>{releaseBalance=resolve;}) : raw;
       throw new Error('Unexpected wallet approval or transaction: '+method);
     }};
     const app=liveHarness({provider,hash:route==='direct'?'#receive':'#home',query:async()=>{
       historyReads++;
-      return {items:historyReads===1?[]:[{hash:'0x'+'a'.repeat(64),blockNumber:'0x1',timestamp:Math.floor(Date.now()/1000),direction:'in',valueWei:'5500000000000000000',balanceWei:'6500000000000000000'}],lastScannedBlock:historyReads,balanceWei:historyReads===1?'1000000000000000000':'6500000000000000000'};
+      return {items:historyReads===1?[]:[{hash:'0x'+'a'.repeat(64),blockNumber:'0x1',timestamp:Math.floor(Date.now()/1000),direction:'in',valueWei:'5500',balanceWei:'6500'}],lastScannedBlock:historyReads,balanceWei:historyReads===1?'1':'6500'};
     }});
     t.after(app.dispose);
     await new Promise(setImmediate);
@@ -151,20 +153,20 @@ for (const route of ['button','back','direct']) {
     assert.match(app.screen.innerHTML, /잔액을 확인하고 있어요/);
     assert.doesNotMatch(app.screen.innerHTML, /1<span>MST/);
     assert.equal(historyReads,1);
-    releaseBalance('0x'+(65n*10n**17n).toString(16));
+    releaseBalance('0x'+(6500n).toString(16));
     await new Promise(setImmediate);
-    assert.match(app.screen.innerHTML, /6\.5<span>MST/);
+    assert.match(app.screen.innerHTML, /6,500<span>MST/);
     assert.match(app.screen.innerHTML, /6,500원 상당/);
-    assert.match(app.screen.innerHTML, /\+5\.5 MST/);
+    assert.match(app.screen.innerHTML, /\+5,500 MST/);
     assert.equal(historyReads,2);
-    assert.equal(methods.filter(method=>method==='eth_getBalance').length,2);
+    assert.equal(methods.filter(method=>method==='eth_call').length,2);
     assert.equal(app.location.hash,'#home');
   });
 }
 
 test('a failed balance refresh on return shows retry instead of the old balance', async t => {
-  let raw='0x'+(10n**18n).toString(16);
-  const provider={request:async({method})=>({eth_accounts:['0x'+'1'.repeat(40)],eth_chainId:'0x1db1',eth_getBalance:raw})[method]};
+  let raw='0x1';
+  const provider={request:async({method})=>({eth_accounts:['0x'+'1'.repeat(40)],eth_chainId:'0x1db1',eth_getBalance:'0x0',eth_call:raw})[method]};
   const app=liveHarness({provider,hash:'#receive'});
   t.after(app.dispose);
   await new Promise(setImmediate);
@@ -173,23 +175,22 @@ test('a failed balance refresh on return shows retry instead of the old balance'
   await new Promise(setImmediate);
   assert.match(app.screen.innerHTML,/잔액을 확인하지 못했어요/);
   assert.doesNotMatch(app.screen.innerHTML,/1<span>MST/);
-  raw='0x'+(65n*10n**17n).toString(16);
+  raw='0x'+(6500n).toString(16);
   app.click('refresh');
   await new Promise(setImmediate);
-  assert.match(app.screen.innerHTML,/6\.5<span>MST/);
+  assert.match(app.screen.innerHTML,/6,500<span>MST/);
 });
 
-test('hides the gas reserve while preserving spendable MST precision', () => {
+test('the wallet screen shows whole wMST units as MST with the identical won value and no fee balance', () => {
   const app = liveHarness();
   const address = '0x2222222222222222222222222222222222222222';
-  app.state({ status: 'ready', account: address, balanceWei: '1999999999995506000' });
-  assert.match(app.screen.innerHTML, /2<span>MST/);
-  assert.match(app.screen.innerHTML, /2,000원 상당/);
-  app.state({ status: 'ready', account: address, balanceWei: '50000000' });
+  app.state({ status: 'ready', account: address, balanceWei: '1999', gasWei: '123456789' });
+  assert.match(app.screen.innerHTML, /1,999<span>MST/);
+  assert.match(app.screen.innerHTML, /1,999원 상당/);
+  assert.doesNotMatch(app.screen.innerHTML, /123456789|수수료|가스/);
+  app.state({ status: 'ready', account: address, balanceWei: '0', gasWei: '0' });
   assert.match(app.screen.innerHTML, /0<span>MST/);
   assert.match(app.screen.innerHTML, /0원 상당/);
-  app.state({ status: 'ready', account: address, balanceWei: '5500000050000000000' });
-  assert.match(app.screen.innerHTML, /5\.5<span>MST/);
 });
 
 test('MetaMask handoff uses a simple start path and store payment opens its scanner', () => {
@@ -205,7 +206,7 @@ test('MetaMask handoff uses a simple start path and store payment opens its scan
   assert.equal(installation.assigned.at(-1), handoff.assigned.at(-1));
 
   const payment = liveHarness();
-  payment.state({ status: 'ready', account: '0x3333333333333333333333333333333333333333', balanceWei: '1000000000000000000' });
+  payment.state({ status: 'ready', account: '0x3333333333333333333333333333333333333333', balanceWei: '1000' });
   assert.match(payment.screen.innerHTML, /가게 결제하기/);
   payment.click('pay');
   assert.equal(payment.assigned.at(-1), '/pay.html?scan=1');
@@ -224,7 +225,7 @@ test('wallet ready refreshes the shared history and honors a top-up deep link', 
   app.state(snapshot);
   await new Promise(setImmediate);
   assert.match(app.screen.innerHTML, /충전할 금액 입금 후 직원에게/);
-  app.state({ ...snapshot, balanceWei:'1000000000000000000' });
+  app.state({ ...snapshot, balanceWei:'1000' });
   await new Promise(setImmediate);
   assert.equal(calls, 2);
 });

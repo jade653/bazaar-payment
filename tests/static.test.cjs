@@ -11,11 +11,13 @@ const entryDependencies = {
   'preview.js':['BazaarUI','BazaarTransfer','BazaarScanner','illustration'],
   'transfer-page.js':['BazaarWallet','BazaarTransfer','BazaarUI','BazaarHistory','BazaarScanner'],
   'store.js':['BazaarWallet','BazaarTransfer','BazaarUI','BazaarHistory','QRCode'],
-  'merchant.js':['BazaarTransfer','BazaarUI','QRCode']
+  'merchant.js':['BazaarTransfer','BazaarUI','QRCode'],
+  'dashboard.js':['BazaarWallet','BazaarTransfer','BazaarUI'],
+  'setup.js':['BazaarWallet','BazaarTransfer','BazaarUI','WMST_ARTIFACT']
 };
 
 test('entry pages load all dependencies before executing their actual controllers', async () => {
-  for (const file of ['index.html','preview.html','operator.html','pay.html','store.html','merchant.html']) {
+  for (const file of ['index.html','preview.html','operator.html','pay.html','store.html','merchant.html','dashboard.html','setup.html']) {
     const html = fs.readFileSync(path.join(root,file),'utf8');
     const nodes = new Map();
     function node() {

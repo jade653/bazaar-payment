@@ -4,7 +4,8 @@
 const UI = BazaarUI;
 const previewAccount = '0x' + '1'.repeat(40);
 const previewRecipient = '0x' + '2'.repeat(40);
-const toWei = value => BigInt(Math.round(value * 1000)) * 10n ** 15n;
+// Amounts are whole wMST units (1 wMST = 1 won).
+const toUnits = value => BigInt(Math.round(value));
 document.body.classList.toggle('is-preview', true);
 const mainStates = [
   {id:'welcome',title:'01 시작',description:'앱 설치와 계정 생성 후 바자회로 돌아오는 방법을 안내합니다.'},
@@ -52,7 +53,7 @@ let chargeCompleted=false;
 let merchantReady=false;
 let previewManual=false, previewManualAddress='', previewTarget=previewRecipient, previewRecipientName='', previewStatus='';
 let previewScanner;
-const points=()=>amount/1000;
+const points=()=>amount;
 const action=(label,kind='primary',data='')=>`<button type="button" class="${kind}" ${data}>${label}</button>`;
 const goButton=(label,id,kind='primary')=>action(label,kind,`data-go="${id}"`);
 const actions=(...items)=>`<div class="actions">${items.join('')}</div>`;
@@ -67,8 +68,8 @@ function prepareScreen(){
 
 function balanceScreen(){
   const failed=currentId==='balance-error';
-  return title('내 지갑')+UI.balance({account:previewAccount,balanceWei:toWei(balance),failed,copyAttributes:'data-action="copy-preview-wallet"',refreshAttributes:'data-action="refresh-preview-balance"'})+
-    (failed?`<div class="balance-actions single">${action('다시 확인','primary','data-action="retry-balance"')}</div>`:`<div class="balance-actions">${goButton('충전하기','receive')}${goButton('가게 결제하기','pay-manual','secondary')}<a class="home-store-link" href="store.html?preview=1">내 가게</a></div>${UI.history({items:[{timestamp:Date.now()/1000-300,direction:'out',valueWei:toWei(2),balanceWei:toWei(11)},{timestamp:Date.now()/1000-600,direction:'in',valueWei:toWei(5.5),balanceWei:toWei(13)}]},{compact:true})}`);
+  return title('내 지갑')+UI.balance({account:previewAccount,balanceWei:toUnits(balance),failed,copyAttributes:'data-action="copy-preview-wallet"',refreshAttributes:'data-action="refresh-preview-balance"'})+
+    (failed?`<div class="balance-actions single">${action('다시 확인','primary','data-action="retry-balance"')}</div>`:`<div class="balance-actions">${goButton('충전하기','receive')}${goButton('가게 결제하기','pay-manual','secondary')}<a class="home-store-link" href="store.html?preview=1">내 가게</a></div>${UI.history({items:[{timestamp:Date.now()/1000-300,direction:'out',valueWei:toUnits(2000),balanceWei:toUnits(11000)},{timestamp:Date.now()/1000-600,direction:'in',valueWei:toUnits(5500),balanceWei:toUnits(13000)}]},{compact:true})}`);
 }
 
 function receiveScreen(){
@@ -81,7 +82,7 @@ function paymentScreen(){
   const sending=['payment-approval','payment-pending','payment-unknown'].includes(currentId);
   let parsed=null;try{parsed=BazaarTransfer.parseAmount(amount);}catch{}
   const status=currentId==='payment-cancelled'?UI.errorText(4001):currentId==='payment-failed'?UI.errorText('TRANSACTION_FAILED'):currentId==='payment-unknown'?UI.errorText('RECEIPT_TIMEOUT'):currentId==='insufficient'?UI.errorText('INSUFFICIENT_BALANCE'):previewStatus;
-  return UI.transfer({step:sending?'sending':'form',recipient:merchantReady?previewTarget:null,recipientName:merchantReady?previewRecipientName:'',manual:previewManual,manualAddress:previewManualAddress,value:String(amount||''),balanceWei:toWei(balance),hash:sending&&currentId!=='payment-approval'?'0x'+'a'.repeat(64):null,status:currentId==='payment-approval'&&showRetry?retryReason:status,retry:currentId==='payment-approval'&&showRetry,insufficient:currentId==='insufficient'},{kind:'payment',amount:parsed});
+  return UI.transfer({step:sending?'sending':'form',recipient:merchantReady?previewTarget:null,recipientName:merchantReady?previewRecipientName:'',manual:previewManual,manualAddress:previewManualAddress,value:String(amount||''),balanceWei:toUnits(balance),hash:sending&&currentId!=='payment-approval'?'0x'+'a'.repeat(64):null,status:currentId==='payment-approval'&&showRetry?retryReason:status,retry:currentId==='payment-approval'&&showRetry,insufficient:currentId==='insufficient'},{kind:'payment',amount:parsed});
 }
 
 function renderScreen(){
@@ -155,7 +156,7 @@ function finishPayment(){
   paymentIntent=false;go(balance>0?'home':'empty');
 }
 function selectState(id){
-  amount=5000;balance=id==='empty'?0:id==='insufficient'?3:11;
+  amount=5000;balance=id==='empty'?0:id==='insufficient'?3000:11000;
   previewManual=false;previewManualAddress='';previewTarget=previewRecipient;previewRecipientName='';previewStatus='';
   merchantReady=id!=='pay-manual';
   paymentIntent=false;paymentCompleted=false;chargeCompleted=false;go(id);
@@ -166,7 +167,7 @@ function nextFlow(){
     case'opening':go('connect');break;
     case'home':case'empty':go('receive');break;
     case'receive':go('topup-waiting');break;
-    case'topup-waiting':if(!chargeCompleted){balance+=11;chargeCompleted=true;}go(paymentIntent?'pay':'home');break;
+    case'topup-waiting':if(!chargeCompleted){balance+=11000;chargeCompleted=true;}go(paymentIntent?'pay':'home');break;
     case'payment-pending':case'payment-unknown':go('payment-success');break;
     case'payment-success':finishPayment();break;
     case'balance-error':queryBalance();break;
@@ -178,7 +179,7 @@ function requestPayment(){
   try{BazaarTransfer.parseAmount(amount);}catch{return;}
   if(currentId==='payment-prepare'){paymentIntent=true;go('connect');return;}
   if(currentId==='payment-unknown'){go('payment-pending');return;}
-  if(points()>=balance){go('insufficient');return;}
+  if(points()>balance){go('insufficient');return;}
   paymentCompleted=false;go('payment-approval');
 }
 

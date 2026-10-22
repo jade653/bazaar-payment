@@ -11,10 +11,10 @@
     chainId:Wallet.NETWORK.chainId, limit:20, storage:preview ? null : undefined,
     query:(account, options) => preview ? Promise.resolve({
       items:[
-        { hash:'0x'+'a'.repeat(64), blockNumber:'0x0', timestamp:Math.floor(Date.now()/1000)-180, direction:'in', valueWei:55n*10n**18n, balanceWei:1255n*10n**17n },
-        { hash:'0x'+'b'.repeat(64), blockNumber:'0x0', timestamp:Math.floor(Date.now()/1000)-720, direction:'out', valueWei:10n*10n**18n, balanceWei:705n*10n**17n }
-      ], lastScannedBlock:0, balanceWei:'125500000000000000000', settledHashes:[]
-    }) : window.BazaarHistory.recentTransfers(window.fetch.bind(window), { account, rpcUrl:Wallet.NETWORK.rpcUrls[0], ...options }),
+        { hash:'0x'+'a'.repeat(64), blockNumber:'0x0', timestamp:Math.floor(Date.now()/1000)-180, direction:'in', valueWei:55000n, balanceWei:125500n },
+        { hash:'0x'+'b'.repeat(64), blockNumber:'0x0', timestamp:Math.floor(Date.now()/1000)-720, direction:'out', valueWei:10000n, balanceWei:70500n }
+      ], lastScannedBlock:0, balanceWei:'125500', settledHashes:[]
+    }) : window.BazaarHistory.recentTransfers(window.fetch.bind(window), { account, rpcUrl:Wallet.NETWORK.rpcUrls[0], token:Wallet.TOKEN, ...options }),
     onChange:render
   });
   function render() {
@@ -93,7 +93,7 @@
   }, 5000);
   window.addEventListener('pagehide', event => { if (!event.persisted) { window.clearInterval?.(syncTimer); disposed = true; controller?.dispose(); discovery?.dispose(); history.clear(); } });
   if (preview) {
-    state.account = '0x' + '1'.repeat(40); state.balanceWei = '125500000005000000000';
+    state.account = '0x' + '1'.repeat(40); state.balanceWei = '125500';
     void history.load(state.account);
   } else {
     discovery = Wallet.discover(window);

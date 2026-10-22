@@ -26,6 +26,7 @@ jobs:
         run: |
           mkdir -p _site
           cp *.html *.css *.js _site/
+          mkdir -p _site/contracts && cp contracts/wMST.sol contracts/wMST.artifact.json _site/contracts/
           cp -R assets _site/
           cp -R vendor _site/
       - uses: actions/upload-pages-artifact@v4

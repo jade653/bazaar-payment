@@ -48,14 +48,14 @@ test('preview top-up returns to the original payment instead of onboarding', () 
   page.next(); page.next();
   assert.equal(page.location.hash, '#pay-manual');
   assert.match(page.screen.innerHTML, /value="7500"/);
-  assert.match(page.screen.innerHTML, /14 MST/);
+  assert.match(page.screen.innerHTML, /14,000 MST/);
   assert.match(page.screen.innerHTML, /0x2222222222222222222222222222222222222222/);
 });
 test('the insufficient preview uses the shared dialog and closes without losing the payment', () => {
   const page=harness();
   page.click({state:'insufficient'});
   assert.match(page.screen.innerHTML, /<dialog class="balance-dialog"/);
-  assert.match(page.screen.innerHTML, /현재 잔액: <strong>3 MST<\/strong>/);
+  assert.match(page.screen.innerHTML, /현재 잔액: <strong>3,000 MST<\/strong>/);
   assert.doesNotMatch(page.screen.innerHTML, /class="operator-alert"/);
   page.click({transfer:'dismiss-insufficient'});
   assert.doesNotMatch(page.screen.innerHTML, /<dialog/);

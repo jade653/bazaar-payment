@@ -97,6 +97,12 @@
     if (seconds < 86400) return Math.floor(seconds / 3600) + '시간 전';
     return Math.floor(seconds / 86400) + '일 전';
   }
+  // Wallet table time: the actual day of month and clock time, without seconds (e.g. "23일 14:05").
+  function usedAt(timestamp) {
+    if (!Number.isFinite(timestamp)) return '—';
+    const date = new Date(timestamp * 1000), pad = value => String(value).padStart(2, '0');
+    return `${date.getDate()}일 ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
   const exactTime = timestamp => Number.isFinite(timestamp) ? new Date(timestamp * 1000).toLocaleString('ko-KR', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' }) : '—';
 
   function createRpc({ fetchImpl, url, timeout = RPC_TIMEOUT }) {
@@ -170,10 +176,10 @@
       const head = (label, keyName, numeric = true) => `<th${numeric ? ' class="num"' : ''}><button type="button" data-sort="${keyName}"${sort.key === keyName ? ' class="active"' : ''}>${label}${sort.key === keyName && keyName !== 'number' ? (sort.direction === 'desc' ? ' ↓' : ' ↑') : ''}</button></th>`;
       const rows = wallets.map(item => {
         const time = timeOf(item.lastBlock);
-        return `<tr data-wallet="${item.address}" tabindex="0" role="button"><td class="num">${item.isStore ? '<span class="dashboard-chip store">가게</span>' : item.number ?? '—'}</td><td><code>${UI.esc(shortAddress(item.address))}</code>${item.recoveredFlag ? '<span class="dashboard-chip recovered">회수</span>' : ''}</td><td class="num">${won(item.balance)}</td><td class="num">${won(item.sent)}</td><td class="num">${won(item.toppedUp)}</td><td class="time" title="${UI.esc(exactTime(time))}">${UI.esc(relativeTime(time, now()))}</td></tr>`;
+        return `<tr data-wallet="${item.address}" tabindex="0" role="button"><td class="num">${item.isStore ? '<span class="dashboard-chip store">가게</span>' : item.number ?? '—'}</td><td><code>${UI.esc(shortAddress(item.address))}</code>${item.recoveredFlag ? '<span class="dashboard-chip recovered">회수</span>' : ''}</td><td class="num">${won(item.balance)}</td><td class="num">${won(item.sent)}</td><td class="num">${won(item.toppedUp)}</td><td class="time" title="${UI.esc(exactTime(time))}">${UI.esc(usedAt(time))}</td></tr>`;
       }).join('');
       write('dashboardWallets', wallets.length
-        ? `<table class="dashboard-table"><thead><tr>${head('#', 'number', true)}<th>지갑 주소</th>${head('잔액', 'balance')}${head('사용 금액', 'sent')}${head('충전', 'toppedUp')}${head('최근 사용', 'recent', false)}</tr></thead><tbody>${rows}</tbody></table>`
+        ? `<table class="dashboard-table"><thead><tr>${head('#', 'number', true)}<th>지갑 주소</th>${head('잔액', 'balance')}${head('사용 금액', 'sent')}${head('충전', 'toppedUp')}${head('최근 사용', 'recent')}</tr></thead><tbody>${rows}</tbody></table>`
         : `<p class="dashboard-empty">${query ? '검색 결과가 없어요.' : '아직 충전된 지갑이 없어요.'}</p>`);
       const recent = summary.transfers.slice(0, RECENT_LIMIT);
       write('dashboardTransfers', recent.length ? recent.map(item => {
@@ -271,7 +277,16 @@
     }
     function start() {
       node('dashboardRefresh')?.addEventListener('click', () => { void refresh(); });
-      node('dashboardSearch')?.addEventListener('input', event => { search = event.target.value || ''; render(); });
+      const searchInput = node('dashboardSearch'), searchToggle = node('dashboardSearchToggle');
+      const setSearchOpen = open => {
+        if (!searchInput) return;
+        searchInput.hidden = !open; searchToggle?.setAttribute?.('aria-expanded', String(open));
+        if (open) searchInput.focus?.();
+        else if (search) { searchInput.value = ''; search = ''; render(); }
+      };
+      searchToggle?.addEventListener('click', () => setSearchOpen(searchInput?.hidden));
+      searchInput?.addEventListener('input', event => { search = event.target.value || ''; render(); });
+      searchInput?.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault?.(); setSearchOpen(false); searchToggle?.focus?.(); } });
       node('dashboardWallets')?.addEventListener('click', onTableClick);
       node('dashboardWallets')?.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { const row = event.target.closest?.('[data-wallet]'); if (row) { event.preventDefault?.(); open(row.dataset.wallet); } } });
       const dialog = node('dashboardDialog');
@@ -289,5 +304,5 @@
     const instance = { start, stop, refresh, open, close, snapshot:() => ({ summary, cursor, error, loading, updatedAt, stores:[...stores], sort:{ ...sort }, selected, timestamps:new Map(timestamps) }) };
     return instance;
   }
-  return { aggregate, mergeLogs, sortWallets, relativeTime, shortAddress, createRpc, sampleData, create, REFRESH_INTERVAL, STORES_KEY };
+  return { aggregate, mergeLogs, sortWallets, relativeTime, usedAt, shortAddress, createRpc, sampleData, create, REFRESH_INTERVAL, STORES_KEY };
 });

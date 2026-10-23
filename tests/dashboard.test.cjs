@@ -67,6 +67,9 @@ test('mergeLogs dedupes by hash and log index, drops removed logs and keeps chai
   assert.deepEqual(merged.map(item => Number(BigInt(item.blockNumber))), [100, 105, 110, 112, 131]);
   assert.equal(Dashboard.relativeTime(1000, 1000 * 1000 + 200000), '3분 전');
   assert.equal(Dashboard.relativeTime(undefined), '—');
+  assert.equal(Dashboard.usedAt(new Date(2026, 9, 23, 14, 5, 59).getTime() / 1000), '23일 14:05', 'seconds are dropped, not rounded');
+  assert.equal(Dashboard.usedAt(new Date(2026, 10, 3, 9, 7).getTime() / 1000), '3일 09:07');
+  assert.equal(Dashboard.usedAt(undefined), '—');
   assert.equal(Dashboard.shortAddress(alice), '0x11111…11111');
 });
 
@@ -121,13 +124,15 @@ test('the dashboard renders four totals, the numbered wallet table and recent tr
   const wallets = page.node('dashboardWallets').innerHTML;
   assert.match(wallets, /<th class="num"><button type="button" data-sort="number" class="active">#<\/button><\/th><th>지갑 주소<\/th>/);
   assert.match(wallets, /data-sort="balance">잔액/); assert.match(wallets, /data-sort="sent">사용 금액/); assert.match(wallets, /data-sort="toppedUp">충전/); assert.match(wallets, /data-sort="recent">최근 사용/);
+  assert.match(wallets, /<th class="num"><button type="button" data-sort="recent">최근 사용/, 'the recency column is right-aligned like the amounts');
   const rows = wallets.match(/<tr data-wallet="[^"]+"[^>]*>.*?<\/tr>/g);
   assert.equal(rows.length, 3);
   assert.match(rows[0], /<span class="dashboard-chip store">가게<\/span><\/td><td><code>0x55555…55555<\/code><span class="dashboard-chip recovered">회수<\/span>/);
   assert.match(rows[1], /<td class="num">1<\/td><td><code>0x11111…11111<\/code><\/td><td class="num">22,500<\/td><td class="num">7,500<\/td><td class="num">30,000<\/td>/);
   assert.match(rows[2], /<td class="num">2<\/td><td><code>0x22222…22222<\/code><span class="dashboard-chip recovered">회수<\/span><\/td><td class="num">0<\/td><td class="num">50,000<\/td><td class="num">50,000<\/td>/);
   assert.doesNotMatch(wallets, /손님| MST/);
-  assert.match(wallets, /분 전|시간 전|방금 전|일 전/);
+  assert.match(wallets, /<td class="time" title="[^"]+">\d{1,2}일 \d{2}:\d{2}<\/td>/, 'last use shows the actual day and time without seconds');
+  assert.doesNotMatch(wallets, /분 전|시간 전|방금 전|일 전/);
   const transfers = page.node('dashboardTransfers').innerHTML;
   assert.match(transfers, /type-topup">충전/); assert.match(transfers, /type-payment">송금/); assert.doesNotMatch(transfers, /회수|결제/);
   assert.match(transfers, /<em>운영<\/em>/); assert.match(transfers, /<em>가게<\/em>/); assert.match(transfers, /<strong>10,000<\/strong>/);
@@ -135,11 +140,18 @@ test('the dashboard renders four totals, the numbered wallet table and recent tr
   assert.equal(page.events.tickMs, Dashboard.REFRESH_INTERVAL);
   assert.equal(page.requests.filter(method => method === 'eth_getLogs').length, 1);
   assert.equal(page.requests.filter(method => method === 'eth_getBalance').length, 0, 'fee balances are read only for an opened wallet');
-  // Search and column sorts.
-  page.node('dashboardSearch').value = '2222';
-  page.events['dashboardSearch:input']({ target:page.node('dashboardSearch') });
+  // The magnifier opens the search field; closing it clears the filter.
+  const searchInput = page.node('dashboardSearch');
+  searchInput.hidden = true;
+  page.events['dashboardSearchToggle:click']();
+  assert.equal(searchInput.hidden, false);
+  searchInput.value = '2222';
+  page.events['dashboardSearch:input']({ target:searchInput });
   assert.doesNotMatch(page.node('dashboardWallets').innerHTML, /0x11111/);
-  page.node('dashboardSearch').value = ''; page.events['dashboardSearch:input']({ target:page.node('dashboardSearch') });
+  page.events['dashboardSearchToggle:click']();
+  assert.equal(searchInput.hidden, true); assert.equal(searchInput.value, '');
+  assert.match(page.node('dashboardWallets').innerHTML, /0x11111/);
+  // Column sorts.
   page.click('dashboardWallets', { sort:'balance' });
   let order = page.node('dashboardWallets').innerHTML.match(/data-wallet="([^"]+)"/g);
   assert.deepEqual(order.map(item => item.slice(13, -1)), [alice, store, bob]);

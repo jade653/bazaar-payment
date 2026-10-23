@@ -26,6 +26,14 @@
 
 체인의 수수료 시장이 바뀌거나 MetaMask 동작이 달라지면 setup.html에서 **측정할 wMST 컨트랙트 주소**에 기존 주소를 넣고 다시 측정한 뒤 `gasPolicy`만 갱신합니다. 컨트랙트 소스를 수정했다면 `npm install --no-save solc@0.8.28` 후 `node tools/compile-wmst.cjs`로 `contracts/wMST.artifact.json`과 `wmst-artifact.js`를 다시 생성합니다(테스트가 소스 해시를 검사합니다). 배포 없이 수수료를 가늠하려면 `node tools/estimate-wmst-gas.cjs`를 실행합니다.
 
+## 운영자 페이지 비밀번호
+
+`operator.html`, `dashboard.html`, `setup.html`은 비밀번호를 입력해야 화면이 보입니다. 맞게 입력한 기기는 12시간 동안 다시 묻지 않습니다.
+
+1. `operator-gate.js`의 `GATE`에서 `hash`가 비어 있으면 세 페이지 모두 잠긴 채로 **설정값 만들기** 화면을 보여줍니다.
+2. 새 비밀번호(8자 이상)를 두 번 입력하면 `const GATE = { ... };` 한 줄이 나옵니다. 이 줄로 `operator-gate.js`의 `GATE` 줄을 바꾸고 `main`에 푸시합니다. 비밀번호를 바꿀 때도 `hash`를 비우고 같은 과정을 거치면 되고, 바꾸면 기존 기기의 기억도 풀립니다.
+3. 저장소에는 비밀번호가 아니라 PBKDF2 해시만 들어갑니다. 다만 검사는 브라우저에서 하므로 우회할 수 있는 가림막일 뿐이고, 충전·발행은 여전히 운영 지갑의 MetaMask 서명으로 보호됩니다. 추측하기 어려운 긴 비밀번호를 쓰세요.
+
 ## 저장소 설정 확인
 
 - **Settings → Pages → Build and deployment → Source**: GitHub Actions

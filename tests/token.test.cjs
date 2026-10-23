@@ -51,6 +51,14 @@ test('ABI helpers encode calls and decode balances exactly', () => {
   assert.equal(Transfer.abi.decodeUint('0x' + '1'.padStart(64, '0')), 1n);
   assert.throws(() => Transfer.abi.decodeUint('0x'), { code:'INVALID_BALANCE' });
   assert.equal(Transfer.abi.topicAddress('0x' + 'ab'.repeat(20).padStart(64, '0')), '0x' + 'ab'.repeat(20));
-  assert.equal(Transfer.tokenReady(TOKEN), false, 'address is filled in only after deployment');
+  assert.equal(Transfer.tokenReady({ ...TOKEN, address:null }), false);
   assert.equal(Transfer.tokenReady(token), true);
+});
+test('the production token points at the deployed contract with the measured fee policy', () => {
+  assert.equal(TOKEN.address, '0x2affeb7a958851645092cce8de9d2dbc88f2adf1');
+  assert.equal(TOKEN.deployBlock, 13341971);
+  assert.equal(Transfer.tokenReady(TOKEN), true);
+  assert.equal(TOKEN.gasPolicy.transferReserveWei, '51632000');
+  assert.equal(TOKEN.gasPolicy.topUpReserveWei, '88472000');
+  assert.equal(Transfer.gasSupportWei(TOKEN), 1032640000n);
 });

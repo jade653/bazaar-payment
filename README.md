@@ -27,18 +27,18 @@ QR 카메라·이미지 인식은 qr-scanner.js, QR 생성과 금액·주소 표
 - 컨트랙트: [contracts/wMST.sol](contracts/wMST.sol). 고정 발행량을 배포 시 배포 지갑(운영 지갑)에 한 번에 발행하며 소유자·추가 발행·소각·정지 기능이 없습니다. 추가 발행 트랜잭션과 관리 코드가 없어 배포·전송 gas가 가장 적고 현장에서 관리할 것도 없습니다. 발행량은 setup.html에서 정하며 기본 1,000,000,000 wMST입니다(운영 지갑에 남은 토큰은 비용이 들지 않습니다).
 - `transferWithGas(to, value)`: 충전 전용. wMST 전송과 함께 보낸 네이티브 MST(msg.value)를 같은 지갑으로 넘겨 **승인 한 번**으로 wMST와 수수료를 함께 충전합니다.
 - 컴파일: solc 0.8.28, optimizer(runs 10000), evmVersion paris. 체인이 PUSH0을 거부하므로 Shanghai 이후 opcode를 쓰지 않습니다. 결과는 [contracts/wMST.artifact.json](contracts/wMST.artifact.json)과 setup.html이 쓰는 wmst-artifact.js에 커밋하며 테스트가 소스 해시와 함수 선택자를 대조합니다.
-- 설정: wallet.js의 `TOKEN`(`address`, `deployBlock`, `gasPolicy`). 배포 전에는 `address`가 null이며 지갑 화면은 “서비스 준비가 아직 끝나지 않았어요”를 표시합니다. 발행·측정·설정 절차는 [DEPLOY.md](DEPLOY.md)를 참고하세요.
+- 배포: 2026-10-23, 컨트랙트 0x2affeb7a958851645092cce8de9d2dbc88f2adf1, 배포 블록 13,341,971, 발행량 1,000,000,000 wMST(운영 지갑 보유). 설정은 wallet.js의 `TOKEN`(`address`, `deployBlock`, `gasPolicy`)에 있으며, `address`가 null이면 지갑 화면은 “서비스 준비가 아직 끝나지 않았어요”를 표시합니다. 발행·측정·설정 절차는 [DEPLOY.md](DEPLOY.md)를 참고하세요.
 
 수수료 정책은 다음과 같습니다.
 
 | 항목 | 값 | 근거 |
 | --- | --- | --- |
 | 전송 요청에 넣는 수수료 상한 | maxFeePerGas 1,000 wei, maxPriorityFeePerGas 100 wei | 체인 base fee 7 wei, priority 100 wei(eth_gasPrice 107 wei). 지갑이 자체 추정값 대신 이 상한을 쓰도록 요청해 실제 비용을 107 wei/gas 수준으로 유지 |
-| 전송 1회 확보 금액 `transferReserveWei` | 77,160,000 wei | 최악 조건(처음 받는 지갑) 전송 51,440 gas × 지갑 여유분 1.5 × 1,000 wei. 지갑은 이 금액 이상을 보유해야 전송을 허용 |
-| 충전 1회 운영 지갑 확보 금액 `topUpReserveWei` | 132,417,000 wei | 처음 받는 지갑 충전 88,278 gas × 1.5 × 1,000 wei |
-| 충전 시 손님에게 주는 수수료 | `transfersPerTopUp`(20) × `transferReserveWei` = 1,543,200,000 wei | 요구사항: 충전 1회당 wMST 전송 20회분. 매 충전마다 고정으로 동봉 |
+| 전송 1회 확보 금액 `transferReserveWei` | 51,632,000 wei | 최악 조건(처음 받는 지갑) 전송의 MetaMask 가스 한도 51,632 × 상한 1,000 wei. 지갑은 이 금액 이상을 보유해야 전송을 허용 |
+| 충전 1회 운영 지갑 확보 금액 `topUpReserveWei` | 88,472,000 wei | 처음 받는 지갑 충전의 가스 한도 88,472 × 1,000 wei |
+| 충전 시 손님에게 주는 수수료 | `transfersPerTopUp`(20) × `transferReserveWei` = 1,032,640,000 wei | 요구사항: 충전 1회당 wMST 전송 20회분. 매 충전마다 고정으로 동봉 |
 
-위 gas 수치는 `node tools/estimate-wmst-gas.cjs`가 배포 없이 상태 오버라이드로 실측한 값(2026-10-22)이며, 배포 뒤 setup.html에서 MetaMask가 실제로 보낸 거래의 영수증·가스 한도·수수료 상한으로 다시 측정해 `gasPolicy`를 갱신합니다. 실제 전송 1회 비용은 약 5.5백만 wei(5.5×10⁻¹² MST)입니다.
+위 수치는 2026-10-23 setup.html에서 MetaMask가 실제로 보낸 거래 3건으로 측정한 값입니다: 새 지갑 전송 51,240 gas 사용/51,632 한도, 기존 지갑 전송 34,140/34,498, 충전 85,701/88,472. MetaMask는 요청한 상한 1,000 wei를 그대로 썼고 실제 지불은 107 wei/gas로 전송 1회 5,482,680 wei(5.5×10⁻¹² MST)입니다. 손님은 수수료 상한까지 오르는 최악의 경우에도 20회, 현재 체인 상태에서는 약 178회를 전송할 수 있습니다. 배포 전 추정은 `node tools/estimate-wmst-gas.cjs`(전송 51,440 gas, 충전 88,278 gas)로 측정값과 거의 같았습니다.
 
 송금 전 검증은 wMST 잔액(부족 시 `INSUFFICIENT_BALANCE`)과 네이티브 MST 잔액(전송 확보 금액 미만이면 `INSUFFICIENT_GAS`)을 따로 확인합니다. 손님에게는 “수수료 잔액이 부족해요. 직원에게 충전을 요청해 주세요.”, 충전 화면에는 운영 지갑의 MST·wMST 보충 안내를 보여줍니다. 충전 화면은 운영 지갑의 MST로 가능한 충전 횟수를 “수수료 잔량”으로 표시합니다.
 

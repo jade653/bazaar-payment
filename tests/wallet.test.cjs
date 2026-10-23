@@ -45,7 +45,7 @@ test('ready state carries the wMST balance read from the token and the native fe
   assert.equal(read.params[0].to,TEST_TOKEN.address);assert.equal(read.params[0].data,TEST_TOKEN.selectors.balanceOf+A.slice(2).padStart(64,'0'));assert.equal(read.params[1],'latest');
 });
 test('an unconfigured token is reported as an error instead of a fake balance, and token:null reads only native MST',async t=>{
-  const p=new Provider(),f=fixture(p,{token:TOKEN});t.after(()=>f.wallet.dispose());await f.wallet.setup();
+  const p=new Provider(),f=fixture(p,{token:{...TOKEN,address:null}});t.after(()=>f.wallet.dispose());await f.wallet.setup();
   assert.equal(f.wallet.getSnapshot().status,'error');assert.equal(f.wallet.getSnapshot().code,'TOKEN_NOT_CONFIGURED');assert.ok(!p.calls.some(c=>c.method==='eth_call'));
   const q=new Provider({gas:'0x7'}),g=fixture(q,{token:null});t.after(()=>g.wallet.dispose());await g.wallet.setup();
   assert.equal(g.wallet.getSnapshot().status,'ready');assert.equal(g.wallet.getSnapshot().balanceWei,null);assert.equal(g.wallet.getSnapshot().gasWei,'7');assert.ok(!q.calls.some(c=>c.method==='eth_call'));

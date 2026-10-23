@@ -13,8 +13,8 @@
   // wMST (ERC-20, 1 wMST = 1 KRW, 0 decimals). Balances and transfers use this token;
   // native MST is only spent on fees. Fill address/deployBlock from setup.html (DEPLOY.md).
   const TOKEN = Object.freeze({
-    address: null,
-    deployBlock: 0,
+    address: '0x2affeb7a958851645092cce8de9d2dbc88f2adf1',
+    deployBlock: 13341971,
     symbol: 'wMST', decimals: 0,
     selectors: Object.freeze({ transfer: '0xa9059cbb', transferWithGas: '0xf620de7c', balanceOf: '0x70a08231', totalSupply: '0x18160ddd' }),
     transferTopic: '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef',
@@ -22,14 +22,14 @@
     // base fee 7 wei, priority 100 wei). The reserve figures are what the wallet must hold
     // before it lets one transfer through (gas limit x max fee); they come from the
     // measurement in setup.html and the estimate in tools/estimate-wmst-gas.cjs.
-    // Initial values: tools/estimate-wmst-gas.cjs on 2026-10-22 (transfer 51,440 gas, top-up 88,278 gas,
-    // x1.5 wallet padding x 1,000 wei). Replace with the setup.html measurement after deployment.
+    // Measured in setup.html on 2026-10-23 from MetaMask-sent transactions: transfer to a new wallet
+    // 51,240 gas used / 51,632 gas limit, top-up 85,701 / 88,472, max fee 1,000 wei honored by the wallet.
     gasPolicy: Object.freeze({
       maxFeePerGasWei: '1000',
       maxPriorityFeePerGasWei: '100',
       transfersPerTopUp: 20,
-      transferReserveWei: '77160000',
-      topUpReserveWei: '132417000'
+      transferReserveWei: '51632000',
+      topUpReserveWei: '88472000'
     })
   });
   const ALLOWED = new Set(['eth_accounts', 'eth_requestAccounts', 'eth_chainId',

@@ -15,6 +15,9 @@
   const TOKEN = Object.freeze({
     address: '0x2affeb7a958851645092cce8de9d2dbc88f2adf1',
     deployBlock: 13341971,
+    // Operator wallets besides the deployer (treasury): transfers from them count as top-ups,
+    // transfers to them as recoveries on the dashboard. Add addresses here as operators join.
+    operatorWallets: Object.freeze([]),
     symbol: 'wMST', decimals: 0,
     selectors: Object.freeze({ transfer: '0xa9059cbb', transferWithGas: '0xf620de7c', balanceOf: '0x70a08231', totalSupply: '0x18160ddd' }),
     transferTopic: '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef',

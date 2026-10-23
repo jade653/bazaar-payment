@@ -7,11 +7,11 @@
   <title>운영 현황</title>
   <link rel="icon" href="assets/talent-mark.svg" type="image/svg+xml">
   <link rel="stylesheet" href="styles.css?v=20261022-1">
-  <link rel="stylesheet" href="dashboard.css?v=20261022-1">
-  <script src="wallet.js?v=20261023-1" defer></script>
+  <link rel="stylesheet" href="dashboard.css?v=20261023-2">
+  <script src="wallet.js?v=20261023-2" defer></script>
   <script src="transfer-core.js?v=20261022-1" defer></script>
   <script src="payment-ui.js?v=20261022-1" defer></script>
-  <script src="dashboard.js?v=20261023-1" defer></script>
+  <script src="dashboard.js?v=20261023-2" defer></script>
 </head>
 <body class="operator-body">
   <main class="operator-app dashboard-app">
@@ -24,7 +24,7 @@
       <div id="dashboardStats" class="dashboard-stats"></div>
       <section class="dashboard-section">
         <h2>지갑</h2>
-        <div class="dashboard-tools"><input id="dashboardSearch" type="search" placeholder="지갑 주소 검색" autocomplete="off" aria-label="지갑 주소 검색"><button id="dashboardSort" type="button" aria-label="정렬 바꾸기">잔액순</button></div>
+        <div class="dashboard-tools"><input id="dashboardSearch" type="search" placeholder="지갑 주소 검색" autocomplete="off" aria-label="지갑 주소 검색"></div>
         <div id="dashboardWallets" class="dashboard-wallets"></div>
       </section>
       <section class="dashboard-section">
@@ -32,6 +32,7 @@
         <div id="dashboardTransfers" class="dashboard-transfers"></div>
       </section>
     </section>
+    <dialog id="dashboardDialog" class="dashboard-dialog" aria-label="지갑 정보"></dialog>
   </main>
 </body>
 </html>

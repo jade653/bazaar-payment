@@ -132,7 +132,10 @@
     };
     const timeOf = block => timestamps.get(block);
     const write = (id, html) => { const target = node(id); if (target && rendered[id] !== html) { target.innerHTML = html; rendered[id] = html; } };
-    const feeText = count => count == null ? '수수료 —' : count < LOW_FEE_TRANSFERS ? `수수료 부족 · ${count}회` : `수수료 ${count.toLocaleString('ko-KR')}회`;
+    // Very large counts only mean "plenty"; keep the cards readable on a phone.
+    const AMPLE = 100000;
+    const countText = count => count >= AMPLE ? '10만회 이상' : `${count.toLocaleString('ko-KR')}회`;
+    const feeText = count => count == null ? '수수료 —' : count < LOW_FEE_TRANSFERS ? `수수료 부족 · ${count}회` : count >= AMPLE ? '수수료 충분' : `수수료 ${count.toLocaleString('ko-KR')}회`;
     const label = (address, treasury) => address === treasury ? '운영' : summary?.wallets.find(item => item.address === address)?.label || '손님';
     function render() {
       if (stopped) return;
@@ -155,7 +158,7 @@
         card('결제', `${summary.paymentCount.toLocaleString('ko-KR')}건`, '손님 → 가게 송금'),
         card('지갑 수', `${summary.wallets.length.toLocaleString('ko-KR')}개`, `가게 ${summary.wallets.filter(item => item.label === '가게').length}개`),
         card('수수료 부족 지갑', `${lowFee.toLocaleString('ko-KR')}개`, `${LOW_FEE_TRANSFERS}회 미만 남은 지갑`, lowFee ? 'warn' : ''),
-        card('운영 지갑 수수료', treasuryTopUps == null ? '—' : `약 ${treasuryTopUps.toLocaleString('ko-KR')}회`, '충전 가능 횟수', treasuryTopUps != null && treasuryTopUps < 20 ? 'warn' : '')
+        card('운영 지갑 수수료', treasuryTopUps == null ? '—' : `약 ${countText(treasuryTopUps)}`, '충전 가능 횟수', treasuryTopUps != null && treasuryTopUps < 20 ? 'warn' : '')
       ].join(''));
       const query = search.trim().toLowerCase();
       const wallets = summary.wallets.filter(item => !query || item.address.includes(query));

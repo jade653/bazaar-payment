@@ -8,7 +8,7 @@
   'use strict';
   // PBKDF2-SHA256 of the operator password. While hash is empty the gate shows a form that generates this line.
   // This only keeps casual visitors out: the check runs in the browser, so wallet signatures remain the real protection.
-  const GATE = { iterations:600000, salt:'', hash:'' };
+  const GATE = { iterations:600000, salt:'c7f1190021b67999f7a0ebd860fcafb5', hash:'0fad80235ac658174e230c93feeab2a3b2889f6f2410df97cfece193b700affc' };
   const STORAGE_KEY = 'bazaar-operator-gate-v1', REMEMBER_MS = 12 * 60 * 60 * 1000, MIN_LENGTH = 8;
   const toHex = bytes => [...new Uint8Array(bytes)].map(byte => byte.toString(16).padStart(2, '0')).join('');
   const fromHex = hex => new Uint8Array((String(hex).match(/../g) || []).map(pair => parseInt(pair, 16)));

@@ -98,14 +98,14 @@ test('a browser without WebCrypto keeps the page closed', () => {
   assert.equal(view.open(), false); assert.match(view.children[0].innerHTML, /https 주소로 다시 열어/);
 });
 
-test('only the operator pages are gated and they load the gate before any page script', () => {
-  for (const file of ['operator.html', 'dashboard.html', 'setup.html']) {
+test('only the top-up and setup pages are gated and they load the gate before any page script', () => {
+  for (const file of ['operator.html', 'setup.html']) {
     const html = fs.readFileSync(path.join(root, file), 'utf8');
     assert.match(html, /<body class="operator-body" data-operator-gate>/, file);
     assert.match(html, /<link rel="stylesheet" href="operator-gate\.css\?v=[^"]+">/, file);
     assert.match(html.match(/<script src="([^"?]+)/)[1], /^operator-gate\.js$/, file + ': the gate runs first');
   }
-  for (const file of ['index.html', 'pay.html', 'store.html', 'merchant.html', 'start.html', 'preview.html']) {
+  for (const file of ['index.html', 'dashboard.html', 'pay.html', 'store.html', 'merchant.html', 'start.html', 'preview.html']) {
     assert.doesNotMatch(fs.readFileSync(path.join(root, file), 'utf8'), /operator-gate|data-operator-gate/, file);
   }
   assert.match(fs.readFileSync(path.join(root, 'operator-gate.css'), 'utf8'), /body\[data-operator-gate\]:not\(\.gate-open\) \.operator-app\{display:none\}/);

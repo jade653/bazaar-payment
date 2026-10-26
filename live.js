@@ -122,7 +122,6 @@
       }
     }
     function init() {
-      document.querySelector('.app-footer').textContent = 'MST 파운데이션 달란트';
       discovery = Wallet.discover(window);
       const readBalanceFromRpc = Wallet.createRpcBalanceReader({ fetchImpl: window.fetch.bind(window) });
       controller = Wallet.createWallet({ lifecycle:window, getProvider: () => discovery.getProvider(), onState, readBalanceFromRpc });

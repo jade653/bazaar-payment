@@ -7,6 +7,7 @@
   <title>wMST 발행·수수료 측정</title>
   <link rel="icon" href="assets/talent-mark.svg" type="image/svg+xml">
   <link rel="stylesheet" href="styles.css?v=20261022-1">
+  <link rel="stylesheet" href="operator-gate.css?v=20261023-1">
   <style>
     .setup-step{border:1px solid #e3e8df;border-radius:16px;padding:18px;margin:0 0 14px;background:#fff}
     .setup-step h2{font-size:16px;margin:0 0 10px;letter-spacing:-.04em}
@@ -27,13 +28,14 @@
     .setup-done{font-size:12px;color:#3f7651;font-weight:700;margin-top:12px}
     .setup-note{font-size:11px;color:#966837;background:#fff4e8;border-radius:10px;padding:10px 12px;margin-top:10px;line-height:1.7}
   </style>
+  <script src="operator-gate.js?v=20261026-1" defer></script>
   <script src="wallet.js?v=20261027-3" defer></script>
   <script src="transfer-core.js?v=20261027-3" defer></script>
   <script src="payment-ui.js?v=20261027-3" defer></script>
   <script src="wmst-artifact.js?v=20261022-1" defer></script>
   <script src="setup.js?v=20261022-1" defer></script>
 </head>
-<body class="operator-body">
+<body class="operator-body" data-operator-gate>
   <main class="operator-app">
     <header class="operator-header">
       <a class="operator-brand" href="/" aria-label="홈으로 이동"><img src="assets/talent-mark.svg" alt=""><div><strong>wMST 발행·수수료 측정</strong><small>운영자 전용</small></div></a>

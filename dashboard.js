@@ -13,7 +13,7 @@
   const HASH = /^0x[0-9a-f]{64}$/i, ADDRESS = /^0x[0-9a-f]{40}$/i;
   const LOG_CHUNK = 50000, HEADER_BATCH = 100, HEADER_CAP = 300;
   const REFRESH_INTERVAL = 10000, RPC_TIMEOUT = 8000, RECENT_LIMIT = 50;
-  const STORES_KEY = 'bazaar-dashboard-stores-v1';
+  const STORES_KEY = 'bazaar-dashboard-stores-v1', OPERATORS_KEY = 'bazaar-dashboard-operators-v1';
   const failure = code => Object.assign(new Error(code), { code });
   const topicAddress = topic => '0x' + String(topic || '').slice(-40).toLowerCase();
   const blockOf = value => Number(BigInt(value || '0x0'));
@@ -32,7 +32,9 @@
   }
 
   // Pure view of the token: operator wallets hand out (충전) and take back (회수) wMST; everything
-  // between other wallets is a 송금. Customer wallets are numbered in order of their first top-up.
+  // between other wallets is a 송금, and moves between operator wallets are 이동 (listed, not totalled).
+  // Operator wallets head the list, then stores, then customers numbered in order of their first top-up.
+  // The 회수 tag marks a wallet emptied by a send to an operator; any later incoming wMST that refills it clears it.
   function aggregate(logs, { treasury = null, operators = [], stores = [] } = {}) {
     const rows = mergeLogs([], logs).map(log => ({
       hash:log.transactionHash, blockNumber:blockOf(log.blockNumber), logIndex:blockOf(log.logIndex),
@@ -45,38 +47,44 @@
     const balances = new Map(), wallets = new Map(), transfers = [];
     let toppedUp = 0n, recovered = 0n, topUpCount = 0, recoveryCount = 0, paymentCount = 0, nextNumber = 1, order = 0;
     const wallet = address => {
-      if (!wallets.has(address)) wallets.set(address, { address, number:null, order:order++, isStore:storeSet.has(address), balance:0n, toppedUp:0n, sent:0n, received:0n, recovered:0n, recoveredFlag:false, lastBlock:0, transferCount:0 });
+      if (!wallets.has(address)) wallets.set(address, { address, number:null, order:order++, isOperator:operatorSet.has(address), isStore:!operatorSet.has(address) && storeSet.has(address), balance:0n, toppedUp:0n, sent:0n, received:0n, recovered:0n, recoveredFlag:false, lastBlock:0, transferCount:0 });
       return wallets.get(address);
     };
     const touch = (address, row) => { const entry = wallet(address); entry.lastBlock = Math.max(entry.lastBlock, row.blockNumber); entry.transferCount++; return entry; };
     for (const row of rows) {
       if (row.from !== ZERO) balances.set(row.from, (balances.get(row.from) || 0n) - row.value);
       balances.set(row.to, (balances.get(row.to) || 0n) + row.value);
-      if (row.from === ZERO) continue;
+      if (row.from === ZERO) { const minted = wallet(row.to); minted.lastBlock = Math.max(minted.lastBlock, row.blockNumber); continue; }
       const fromOperator = operatorSet.has(row.from), toOperator = operatorSet.has(row.to);
       let type;
-      if (fromOperator && toOperator) continue;
-      if (fromOperator) {
+      if (fromOperator && toOperator) {
+        type = '이동';
+        touch(row.from, row).sent += row.value;
+        touch(row.to, row).received += row.value;
+      } else if (fromOperator) {
         type = '충전'; toppedUp += row.value; topUpCount++;
-        const entry = touch(row.to, row); entry.toppedUp += row.value;
+        touch(row.from, row).sent += row.value;
+        const entry = touch(row.to, row); entry.toppedUp += row.value; entry.recoveredFlag &&= balances.get(row.to) === 0n;
         if (entry.number == null) entry.number = nextNumber++;
       } else if (toOperator) {
         type = '회수'; recovered += row.value; recoveryCount++;
-        const entry = touch(row.from, row); entry.sent += row.value; entry.recovered += row.value; entry.recoveredFlag = true;
+        touch(row.to, row).received += row.value;
+        const entry = touch(row.from, row); entry.sent += row.value; entry.recovered += row.value; entry.recoveredFlag = balances.get(row.from) === 0n;
       } else {
         type = '송금'; paymentCount++;
         touch(row.from, row).sent += row.value;
-        touch(row.to, row).received += row.value;
+        const receiver = touch(row.to, row); receiver.received += row.value; receiver.recoveredFlag &&= balances.get(row.to) === 0n;
       }
       transfers.push({ ...row, type });
     }
+    for (const address of operatorSet) wallet(address);
     for (const entry of wallets.values()) entry.balance = balances.get(entry.address) || 0n;
     const treasuryBalance = treasuryAddress ? balances.get(treasuryAddress) || 0n : 0n;
     transfers.sort((a, b) => b.blockNumber - a.blockNumber || b.logIndex - a.logIndex);
-    const list = [...wallets.values()].sort((a, b) => (b.isStore - a.isStore) || ((a.number ?? Infinity) - (b.number ?? Infinity)) || a.order - b.order);
+    const list = [...wallets.values()].sort((a, b) => (b.isOperator - a.isOperator) || (b.isStore - a.isStore) || ((a.number ?? Infinity) - (b.number ?? Infinity)) || a.order - b.order);
     return {
       treasury:treasuryAddress, operators:[...operatorSet], totalSupply, treasuryBalance, circulating:totalSupply - treasuryBalance,
-      toppedUp, recovered, topUpCount, recoveryCount, paymentCount, storeCount:list.filter(item => item.isStore).length,
+      toppedUp, recovered, topUpCount, recoveryCount, paymentCount, storeCount:list.filter(item => item.isStore).length, walletCount:list.filter(item => !item.isOperator).length,
       wallets:list, transfers
     };
   }
@@ -96,6 +104,12 @@
     if (seconds < 3600) return Math.floor(seconds / 60) + '분 전';
     if (seconds < 86400) return Math.floor(seconds / 3600) + '시간 전';
     return Math.floor(seconds / 86400) + '일 전';
+  }
+  // Wallet table time: the actual day of month and clock time, without seconds (e.g. "23일 14:05").
+  function usedAt(timestamp) {
+    if (!Number.isFinite(timestamp)) return '—';
+    const date = new Date(timestamp * 1000), pad = value => String(value).padStart(2, '0');
+    return `${date.getDate()}일 ${pad(date.getHours())}:${pad(date.getMinutes())}`;
   }
   const exactTime = timestamp => Number.isFinite(timestamp) ? new Date(timestamp * 1000).toLocaleString('ko-KR', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' }) : '—';
 
@@ -144,13 +158,16 @@
     let logs = [], cursor = null, summary = null, timestamps = new Map();
     let search = '', sort = { key:'number', direction:'desc' }, error = '', loading = false, updatedAt = null, timer = null, stopped = false;
     let selected = null, selectedFee = null;
-    let stores = []; try { const saved = JSON.parse(storage?.getItem(STORES_KEY) || '[]'); if (Array.isArray(saved)) stores = saved.filter(item => ADDRESS.test(item)).map(item => item.toLowerCase()); } catch {}
+    // Store and operator markings are kept per browser; operator markings add to the configured operator wallets.
+    const loadList = name => { try { const saved = JSON.parse(storage?.getItem(name) || '[]'); return Array.isArray(saved) ? saved.filter(item => ADDRESS.test(item)).map(item => item.toLowerCase()) : []; } catch { return []; } };
+    const saveList = (name, list) => { try { storage?.setItem(name, JSON.stringify(list)); } catch {} };
+    let stores = loadList(STORES_KEY), operators = loadList(OPERATORS_KEY);
     const rendered = {};
     const won = value => UI.won(value);
     const timeOf = block => timestamps.get(block);
     const write = (id, html) => { const target = node(id); if (target && rendered[id] !== html) { target.innerHTML = html; rendered[id] = html; } };
-    const summarize = () => { summary = aggregate(logs, { operators:token.operatorWallets || [], stores }); };
-    const partyLabel = address => summary?.operators.includes(address) ? '운영' : summary?.wallets.find(item => item.address === address)?.isStore ? '가게' : '';
+    const summarize = () => { summary = aggregate(logs, { operators:[...(token.operatorWallets || []), ...operators], stores }); };
+    const isStore = address => !!summary?.wallets.find(item => item.address === address)?.isStore;
     function render() {
       if (stopped) return;
       const status = node('dashboardStatus');
@@ -162,7 +179,7 @@
       write('dashboardStats', [
         card('충전 합계', won(summary.toppedUp), `${summary.topUpCount.toLocaleString('ko-KR')}건`),
         card('결제', `${summary.paymentCount.toLocaleString('ko-KR')}건`, '지갑 간 송금'),
-        card('지갑 수', `${summary.wallets.length.toLocaleString('ko-KR')}개`, `가게 ${summary.storeCount}개`),
+        card('지갑 수', `${summary.walletCount.toLocaleString('ko-KR')}개`, `가게 ${summary.storeCount}개`),
         card('회수 합계', won(summary.recovered), `${summary.recoveryCount.toLocaleString('ko-KR')}건`)
       ].join(''));
       const query = search.trim().toLowerCase();
@@ -170,15 +187,18 @@
       const head = (label, keyName, numeric = true) => `<th${numeric ? ' class="num"' : ''}><button type="button" data-sort="${keyName}"${sort.key === keyName ? ' class="active"' : ''}>${label}${sort.key === keyName && keyName !== 'number' ? (sort.direction === 'desc' ? ' ↓' : ' ↑') : ''}</button></th>`;
       const rows = wallets.map(item => {
         const time = timeOf(item.lastBlock);
-        return `<tr data-wallet="${item.address}" tabindex="0" role="button"><td class="num">${item.isStore ? '<span class="dashboard-chip store">가게</span>' : item.number ?? '—'}</td><td><code>${UI.esc(shortAddress(item.address))}</code>${item.recoveredFlag ? '<span class="dashboard-chip recovered">회수</span>' : ''}</td><td class="num">${won(item.balance)}</td><td class="num">${won(item.sent)}</td><td class="num">${won(item.toppedUp)}</td><td class="time" title="${UI.esc(exactTime(time))}">${UI.esc(relativeTime(time, now()))}</td></tr>`;
+        return `<tr data-wallet="${item.address}" tabindex="0" role="button"><td class="num">${item.isOperator ? '<span class="dashboard-chip operator">운영자</span>' : item.isStore ? '<span class="dashboard-chip store">가게</span>' : item.number ?? '—'}</td><td><code>${UI.esc(shortAddress(item.address))}</code>${item.recoveredFlag ? '<span class="dashboard-chip recovered">회수</span>' : ''}</td><td class="num">${won(item.balance)}</td><td class="num">${won(item.sent)}</td><td class="num">${won(item.toppedUp)}</td><td class="time" title="${UI.esc(exactTime(time))}">${UI.esc(usedAt(time))}</td></tr>`;
       }).join('');
       write('dashboardWallets', wallets.length
-        ? `<table class="dashboard-table"><thead><tr>${head('#', 'number', true)}<th>지갑 주소</th>${head('잔액', 'balance')}${head('사용 금액', 'sent')}${head('충전', 'toppedUp')}${head('최근 사용', 'recent', false)}</tr></thead><tbody>${rows}</tbody></table>`
+        ? `<table class="dashboard-table"><thead><tr>${head('#', 'number', true)}<th>지갑 주소</th>${head('잔액', 'balance')}${head('송금', 'sent')}${head('충전', 'toppedUp')}${head('최근 사용', 'recent')}</tr></thead><tbody>${rows}</tbody></table>`
         : `<p class="dashboard-empty">${query ? '검색 결과가 없어요.' : '아직 충전된 지갑이 없어요.'}</p>`);
       const recent = summary.transfers.slice(0, RECENT_LIMIT);
       write('dashboardTransfers', recent.length ? recent.map(item => {
         const time = timeOf(item.blockNumber), topup = item.type === '충전';
-        const party = address => { const label = partyLabel(address); return `<span><code>${UI.esc(shortAddress(address))}</code>${label ? `<em>${label}</em>` : ''}</span>`; };
+        // Operator wallets read as "운영자 d6a8" (first four hex digits); other wallets keep the short address.
+        const party = address => summary.operators.includes(address)
+          ? `<button type="button" class="dashboard-operator" data-wallet="${UI.esc(address)}" title="${UI.esc(address)}">운영자<code>${UI.esc(address.slice(2, 6))}</code></button>`
+          : `<span><code>${UI.esc(shortAddress(address))}</code>${isStore(address) ? '<em>가게</em>' : ''}</span>`;
         return `<div class="dashboard-transfer"><time title="${UI.esc(exactTime(time))}">${UI.esc(relativeTime(time, now()))}</time><span class="dashboard-chip ${topup ? 'type-topup' : 'type-payment'}">${topup ? '충전' : '송금'}</span><div class="dashboard-parties">${party(item.from)}<i>→</i>${party(item.to)}</div><strong>${won(item.value)}</strong></div>`;
       }).join('') : '<p class="dashboard-empty">아직 거래가 없어요.</p>');
       renderDialog();
@@ -186,11 +206,18 @@
     function renderDialog() {
       const dialog = node('dashboardDialog');
       if (!dialog) return;
+      const head = (title, chip = '') => `<div class="dashboard-dialog-head"><strong>${title}</strong>${chip}<button type="button" class="dashboard-dialog-close" data-dialog="close" aria-label="닫기">×</button></div><div class="dashboard-dialog-address"><code>${UI.esc(selected)}</code><button type="button" class="dashboard-copy" data-dialog="copy" aria-label="주소 복사">복사</button></div>`;
       const item = selected && summary?.wallets.find(entry => entry.address === selected);
       if (!item) { if (dialog.open) dialog.close?.(); write('dashboardDialog', ''); return; }
       const time = timeOf(item.lastBlock);
+      if (item.isOperator) {
+        const actions = operators.includes(item.address) ? '<button type="button" class="operator-secondary" data-dialog="toggle-operator">운영자 해제</button>' : '';
+        write('dashboardDialog', `${head(`운영자 ${UI.esc(item.address.slice(2, 6))}`)}<dl><dt>잔액</dt><dd>${won(item.balance)}</dd><dt>송금 금액</dt><dd>${won(item.sent)}</dd><dt>받은 금액</dt><dd>${won(item.received)}</dd><dt>거래 수</dt><dd>${item.transferCount}건</dd><dt>최근 사용</dt><dd>${UI.esc(exactTime(time))}</dd></dl>${actions}`);
+        if (!dialog.open) dialog.showModal?.();
+        return;
+      }
       const fee = selectedFee === undefined ? '확인 중…' : selectedFee == null ? '—' : selectedFee >= 100000 ? '충분' : `약 ${selectedFee.toLocaleString('ko-KR')}회`;
-      write('dashboardDialog', `<div class="dashboard-dialog-head"><strong>${item.isStore ? '가게' : item.number ? `#${item.number}` : '지갑'}</strong>${item.recoveredFlag ? '<span class="dashboard-chip recovered">회수</span>' : ''}<button type="button" class="dashboard-dialog-close" data-dialog="close" aria-label="닫기">×</button></div><code>${UI.esc(item.address)}</code><button type="button" class="dashboard-copy" data-dialog="copy">주소 복사</button><dl><dt>잔액</dt><dd>${won(item.balance)}</dd><dt>충전</dt><dd>${won(item.toppedUp)}</dd><dt>사용 금액</dt><dd>${won(item.sent)}</dd><dt>받은 금액</dt><dd>${won(item.received)}</dd><dt>운영자에게 보냄</dt><dd>${won(item.recovered)}</dd><dt>거래 수</dt><dd>${item.transferCount}건</dd><dt>최근 사용</dt><dd>${UI.esc(exactTime(time))}</dd><dt>남은 수수료</dt><dd>${fee}</dd></dl><button type="button" class="operator-primary" data-dialog="toggle-store">${item.isStore ? '가게 해제' : '가게로 설정'}</button>`);
+      write('dashboardDialog', `${head(item.isStore ? '가게' : item.number ? `#${item.number}` : '지갑', item.recoveredFlag ? '<span class="dashboard-chip recovered">회수</span>' : '')}<dl><dt>잔액</dt><dd>${won(item.balance)}</dd><dt>충전</dt><dd>${won(item.toppedUp)}</dd><dt>송금 금액</dt><dd>${won(item.sent)}</dd><dt>거래 수</dt><dd>${item.transferCount}건</dd><dt>최근 사용</dt><dd>${UI.esc(exactTime(time))}</dd><dt>남은 수수료</dt><dd>${fee}</dd></dl><div class="dashboard-dialog-actions"><button type="button" class="operator-primary" data-dialog="toggle-store">${item.isStore ? '가게 해제' : '가게로 설정'}</button><button type="button" class="operator-secondary" data-dialog="toggle-operator">운영자로 설정</button></div>`);
       if (!dialog.open) dialog.showModal?.();
     }
     async function loadTimestamps() {
@@ -241,12 +268,20 @@
           : '현황을 불러오지 못했어요. 잠시 후 다시 확인해 주세요.';
       } finally { loading = false; render(); }
     }
-    function open(address) { selected = address; void loadFee(address); render(); }
+    function open(address) { selected = address; if (!summary?.operators.includes(address)) void loadFee(address); render(); }
     function close() { selected = null; selectedFee = null; render(); }
     function toggleStore() {
       if (!selected) return;
       stores = stores.includes(selected) ? stores.filter(item => item !== selected) : [...stores, selected];
-      try { storage?.setItem(STORES_KEY, JSON.stringify(stores)); } catch {}
+      saveList(STORES_KEY, stores);
+      summarize(); render();
+    }
+    // A wallet marked as operator leaves the numbered table; its transfers count as 충전/회수 from then on.
+    function toggleOperator() {
+      if (!selected) return;
+      if (operators.includes(selected)) operators = operators.filter(item => item !== selected);
+      else if (!summary?.operators.includes(selected)) { operators = [...operators, selected]; stores = stores.filter(item => item !== selected); saveList(STORES_KEY, stores); }
+      saveList(OPERATORS_KEY, operators);
       summarize(); render();
     }
     function onTableClick(event) {
@@ -263,16 +298,27 @@
       const action = event.target.closest?.('[data-dialog]')?.dataset.dialog;
       if (action === 'close') close();
       else if (action === 'toggle-store') toggleStore();
+      else if (action === 'toggle-operator') toggleOperator();
       else if (action === 'copy') {
         const button = event.target.closest('[data-dialog]');
-        if (root.navigator?.clipboard) root.navigator.clipboard.writeText(selected).then(() => { button.textContent = '복사했어요'; }).catch(() => { button.textContent = '길게 눌러 복사'; });
+        if (root.navigator?.clipboard) root.navigator.clipboard.writeText(selected).then(() => { button.textContent = '복사됨'; }).catch(() => { button.textContent = '길게 눌러 복사'; });
         else button.textContent = '길게 눌러 복사';
       }
     }
     function start() {
       node('dashboardRefresh')?.addEventListener('click', () => { void refresh(); });
-      node('dashboardSearch')?.addEventListener('input', event => { search = event.target.value || ''; render(); });
+      const searchInput = node('dashboardSearch'), searchToggle = node('dashboardSearchToggle');
+      const setSearchOpen = open => {
+        if (!searchInput) return;
+        searchInput.hidden = !open; searchToggle?.setAttribute?.('aria-expanded', String(open));
+        if (open) searchInput.focus?.();
+        else if (search) { searchInput.value = ''; search = ''; render(); }
+      };
+      searchToggle?.addEventListener('click', () => setSearchOpen(searchInput?.hidden));
+      searchInput?.addEventListener('input', event => { search = event.target.value || ''; render(); });
+      searchInput?.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault?.(); setSearchOpen(false); searchToggle?.focus?.(); } });
       node('dashboardWallets')?.addEventListener('click', onTableClick);
+      node('dashboardTransfers')?.addEventListener('click', event => { const target = event.target.closest?.('[data-wallet]'); if (target) open(target.dataset.wallet); });
       node('dashboardWallets')?.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { const row = event.target.closest?.('[data-wallet]'); if (row) { event.preventDefault?.(); open(row.dataset.wallet); } } });
       const dialog = node('dashboardDialog');
       dialog?.addEventListener('click', event => { if (event.target === dialog) close(); else onDialogClick(event); });
@@ -286,8 +332,8 @@
       return instance;
     }
     function stop() { stopped = true; if (timer != null) root.clearInterval?.(timer); timer = null; }
-    const instance = { start, stop, refresh, open, close, snapshot:() => ({ summary, cursor, error, loading, updatedAt, stores:[...stores], sort:{ ...sort }, selected, timestamps:new Map(timestamps) }) };
+    const instance = { start, stop, refresh, open, close, snapshot:() => ({ summary, cursor, error, loading, updatedAt, stores:[...stores], operators:[...operators], sort:{ ...sort }, selected, timestamps:new Map(timestamps) }) };
     return instance;
   }
-  return { aggregate, mergeLogs, sortWallets, relativeTime, shortAddress, createRpc, sampleData, create, REFRESH_INTERVAL, STORES_KEY };
+  return { aggregate, mergeLogs, sortWallets, relativeTime, usedAt, shortAddress, createRpc, sampleData, create, REFRESH_INTERVAL, STORES_KEY, OPERATORS_KEY };
 });

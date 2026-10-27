@@ -89,8 +89,9 @@ test('receive QR opens the top-up page inside MetaMask and survives balance refr
   assert.match(app.screen.innerHTML, /<code class="receive-address">0x111111…111111<\/code>/);
   assert.match(UI.transfer({recipient:address}, {kind:'topup'}), /<strong>0x111111…111111<\/strong>/);
   const url = new URL(app.qr().text);
-  assert.equal(url.origin, 'https://link.metamask.io');
-  assert.equal(url.pathname, '/dapp/bazaar.mustree.kr/operator.html');
+  assert.equal(url.origin, 'https://bazaar.mustree.kr');
+  assert.equal(url.searchParams.get('open'), '1');
+  assert.equal(url.pathname, '/operator.html');
   assert.equal(url.searchParams.get('to'), address);
   assert.equal(require('../transfer-core.js').parseRecipient(app.qr().text)?.address, address);
   assert.deepEqual(app.historyCalls.at(-1), ['push', '#receive']);

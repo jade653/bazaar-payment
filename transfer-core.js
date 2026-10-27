@@ -51,7 +51,12 @@
   }
   function receiveLink(account, { name = '', topup = false } = {}) {
     if (!address(account)) throw failure('INVALID_ADDRESS');
-    return appLink(topup ? '/operator.html' : '/pay.html', { to:account, name:String(name).trim().slice(0, 30) });
+    const url = new URL(topup ? '/operator.html' : '/pay.html', 'https://bazaar.mustree.kr');
+    url.searchParams.set('to', account);
+    const label = String(name).trim().slice(0, 30);
+    if (label) url.searchParams.set('name', label);
+    url.searchParams.set('open', '1');
+    return url.href;
   }
   // Every kind takes whole won; 1 won = 1 wMST, so units equal won. Payments are capped per transaction.
   function parseAmount(value, kind = 'payment') {
@@ -63,6 +68,17 @@
     return { won:units, units };
   }
   const sameChain = (a, b) => { try { return BigInt(a) === BigInt(b); } catch { return false; } };
+  function unsupportedFeeFormat(error) {
+    const queue = [error], seen = new Set();
+    while (queue.length && seen.size < 16) {
+      const item = queue.shift();
+      if (!item || typeof item !== 'object' || seen.has(item)) continue;
+      seen.add(item);
+      if (Number(item.code) === -32602 && /params specify an EIP-1559 transaction but the current network does not support EIP-1559/i.test(String(item.message || ''))) return true;
+      queue.push(item.cause, item.error, item.data, item.originalError);
+    }
+    return false;
+  }
   async function prepare(provider, { account, recipient, value, kind = 'payment', chainId, token, readBalanceFromRpc }) {
     const to = parseRecipient(recipient)?.address;
     if (!to) throw failure('INVALID_ADDRESS');
@@ -177,7 +193,18 @@
         try { prepared = await prepare(rpc, { ...details, chainId, token }); }
         catch (error) { log('payment:prepare:failure', error); throw error; }
         // Include chainId so the wallet can also reject a network change at approval time.
-        const hash = await rpc.request({ method:'eth_sendTransaction', params:[{ ...prepared.transaction, chainId }] });
+        let hash;
+        try {
+          hash = await rpc.request({ method:'eth_sendTransaction', params:[{ ...prepared.transaction, chainId }] });
+        } catch (error) {
+          // This exact parameter-validation rejection happens before approval/submission.
+          // Never retry cancellations, connection failures or unknown send outcomes.
+          if (!unsupportedFeeFormat(error)) throw error;
+          log('payment:legacy-fee-fallback');
+          prepared = await prepare(rpc, { ...details, chainId, token });
+          const { maxFeePerGas, maxPriorityFeePerGas, ...transaction } = prepared.transaction;
+          hash = await rpc.request({ method:'eth_sendTransaction', params:[{ ...transaction, gasPrice:maxFeePerGas, chainId }] });
+        }
         if (!HASH.test(hash || '')) throw failure('INVALID_TX_HASH');
         pendingHash = hash; pendingAccount = details.account;
         pendingDetails = { account:details.account, recipient:details.recipient, value:details.value, kind:details.kind || 'payment' };

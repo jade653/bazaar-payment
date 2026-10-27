@@ -16,6 +16,7 @@
   let state = { step:isTopup ? 'connect' : 'form', account:null, balanceWei:null, gasWei:null, topUpsLeft:null, recipient:initialRecipient?.address || null, recipientName:initialRecipient?.name || '', value:params.get(kind === 'transfer' ? 'mst' : 'won') || '', manual:false, status:'', hash:null, busy:false };
   let discovery, controller, provider, sender, senderProvider, scanner, submitted = null, disposed = false;
   let autoScan = params.get('scan') === '1' && !isTopup;
+  let appOpenAttempted = false;
   const readBalanceFromRpc = preview ? null : Wallet.createRpcBalanceReader({ fetchImpl:window.fetch.bind(window) });
   const returnUrl = (kind === 'transfer' ? '/store.html' : '/') + (preview ? '?preview=1' : '');
   function amountFor(value, amountKind = kind) { try { return Transfer.parseAmount(value, amountKind); } catch { return null; } }
@@ -48,6 +49,12 @@
         : snapshot.status === 'querying' ? '잔액을 확인하고 있어요.'
         : invalid ? '지갑을 연결해 주세요.' : '지갑을 연결하지 못했어요.';
       set({ walletBlocked:['pending','cancelled','needs-network','error','disconnected'].includes(snapshot.status), needsApp:snapshot.status === 'unavailable', account:null, balanceWei:null, gasWei:null, topUpsLeft:null, status:state.step === 'sending' ? state.status : message });
+      // Keep this destination page open behind the app, including after installation.
+      // Browsers may require a second, explicit tap to launch a custom scheme.
+      if (snapshot.status === 'unavailable' && params.get('open') === '1' && !appOpenAttempted) {
+        appOpenAttempted = true;
+        openMetaMask();
+      }
     }
     if (autoScan && ['ready','idle','needs-network'].includes(snapshot.status)) { autoScan = false; scan(); }
   }
@@ -70,9 +77,15 @@
       mode:kind === 'transfer' ? 'transfer' : '',
       [kind === 'transfer' ? 'mst' : 'won']:amount ? amount.won.toString() : '',
       scan:!state.recipient && params.get('scan') === '1' ? '1' : ''
-    });
+    }).replace('https://link.metamask.io/', 'metamask://');
   }
-  function openMetaMask() { location.assign(metaMaskUrl()); }
+  function openMetaMask() {
+    try { location.assign(metaMaskUrl()); }
+    catch {
+      // An unavailable scheme must leave the install/continue instructions visible.
+      set({ needsApp:true });
+    }
+  }
   async function connect() {
     if (preview) { set({ step:'form', balanceWei:'500000', topUpsLeft:isTopup ? 120 : null, status:'' }); return; }
     provider ||= await discovery.getProvider();

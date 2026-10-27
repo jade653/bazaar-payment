@@ -44,12 +44,18 @@
   const sameChain = (a, b) => { try { return BigInt(a) === BigInt(b); } catch { return false; } };
   function errorCode(error) {
     const queue = [error];
+    const items = [];
     for (let i = 0; i < queue.length && i < 12; i++) {
       const item = queue[i];
       if (!item || typeof item !== 'object') continue;
+      items.push(item);
+      queue.push(item.data, item.originalError, item.error, item.cause);
+    }
+    // MetaMask also uses -32002 for RPC backoff, not just pending approvals.
+    if (items.some(item => /RPC endpoint returned too many errors|ERR_NAME_NOT_RESOLVED/i.test(String(item.message || '')))) return 'RPC_UNAVAILABLE';
+    for (const item of items) {
       const code = Number(item.code);
       if ([4001, 4902, -32002].includes(code)) return code;
-      queue.push(item.data, item.originalError, item.error, item.cause);
     }
     return error && error.code;
   }

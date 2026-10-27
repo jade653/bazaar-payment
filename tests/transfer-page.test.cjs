@@ -7,7 +7,7 @@ const UI = require('../payment-ui.js');
 const Transfer = require('../transfer-core.js');
 const { TEST_TOKEN, hex } = require('./fixtures.cjs');
 const account = '0x' + '1'.repeat(40), recipient = '0x' + '2'.repeat(40), hash = '0x' + 'a'.repeat(64);
-function harness({ kind = 'payment', preview = false, name = '', to = recipient, value = '5000', mst = '5', autoScan = false, balanceWei = 100000n, gasWei = 10n ** 15n, delayProvider = false, noProvider = false, refreshFails = false, receipt = { status:'0x1' } } = {}) {
+function harness({ kind = 'payment', preview = false, name = '', to = recipient, value = '5000', mst = '5', autoScan = false, autoOpen = false, blockedApp = false, balanceWei = 100000n, gasWei = 10n ** 15n, delayProvider = false, noProvider = false, refreshFails = false, receipt = { status:'0x1' } } = {}) {
   const events = {}, nodes = new Map(), assigned = [], requests = [], saved = new Map();
   const storage = {getItem:key => saved.get(key) || null,setItem:(key,value) => saved.set(key,value)};
   const History = require('../transaction-history.js');
@@ -38,10 +38,10 @@ function harness({ kind = 'payment', preview = false, name = '', to = recipient,
     BazaarScanner:{create(options){scannerOptions=options;return {start(){scannerStarts++;},stop(){}};}},
     fetch:async () => { throw new Error('Unexpected network'); }, addEventListener() {}
   };
-  const params = new URLSearchParams({ to, won:value, mst, ...(kind === 'transfer' ? { mode:'transfer' } : {}), ...(preview ? { preview:'1' } : {}), ...(autoScan ? {scan:'1'} : {}) });
+  const params = new URLSearchParams({ to, won:value, mst, ...(kind === 'transfer' ? { mode:'transfer' } : {}), ...(preview ? { preview:'1' } : {}), ...(autoScan ? {scan:'1'} : {}), ...(autoOpen ? {open:'1'} : {}) });
   if (name) params.set('name',name);
   node('screen').dataset = { transferKind:kind === 'topup' ? 'topup' : 'payment' };
-  const context = { window, document:{ visibilityState:'visible', getElementById:node, querySelector:selector => selector === '[data-transfer-kind]' ? node('screen') : node('heading'), addEventListener() {} }, URL, location:{ href:'https://bazaar.mustree.kr/' + (kind === 'topup' ? 'operator.html' : 'pay.html') + '?' + params, origin:'https://bazaar.mustree.kr', assign:value => assigned.push(value) } };
+  const context = { window, document:{ visibilityState:'visible', getElementById:node, querySelector:selector => selector === '[data-transfer-kind]' ? node('screen') : node('heading'), addEventListener() {} }, URL, location:{ href:'https://bazaar.mustree.kr/' + (kind === 'topup' ? 'operator.html' : 'pay.html') + '?' + params, origin:'https://bazaar.mustree.kr', assign:value => { assigned.push(value); if (blockedApp) throw new Error('App launch blocked'); } } };
   vm.runInNewContext(fs.readFileSync(require.resolve('../transfer-page.js'), 'utf8'), context);
   const click = async action => { events['screen:click']({ target:{ closest:selector => selector === '[data-transfer]' ? { dataset:{ transfer:action } } : null } }); await new Promise(setImmediate); };
   return { saved, setups:() => setups, requests, assigned, screen:node('screen'), click, scan:raw=>scannerOptions.onAccept(raw), scannerStarts:()=>scannerStarts, input:value=>events['screen:input']({target:{id:'transferAmount',value,selectionStart:value.length,selectionEnd:value.length}}), walletState:value => walletState(value), resolveProvider:() => resolveProvider(provider) };
@@ -115,7 +115,7 @@ for (const kind of ['payment', 'topup', 'transfer']) {
     assert.match(page.screen.innerHTML, /class="operator-primary app-handoff"/);
     assert.doesNotMatch(page.screen.innerHTML, /id="transferAmount"|data-transfer="submit"/);
     const url = new URL(page.screen.innerHTML.match(/href="([^"]+)"/)[1].replaceAll('&amp;', '&'));
-    assert.equal(url.pathname, '/dapp/bazaar.mustree.kr/' + (kind === 'topup' ? 'operator.html' : 'pay.html'));
+    assert.equal(url.pathname, '/bazaar.mustree.kr/' + (kind === 'topup' ? 'operator.html' : 'pay.html'));
     assert.equal(url.searchParams.has('to'), false);
     assert.equal(url.searchParams.has('won'), false);
     assert.equal(url.searchParams.has('mst'), false);
@@ -205,10 +205,48 @@ test('confirmed success remains visible when a balance refresh fails', async () 
   await page.click('submit');
   assert.match(page.screen.innerHTML, /class="operator-success"/);
 });
+for (const kind of ['payment', 'topup', 'transfer']) {
+  test(`${kind} QR entry attempts the app once and keeps installation and destination recovery available`, () => {
+    const page = harness({kind, noProvider:true, autoOpen:true, name:'사랑 분식'});
+    assert.equal(page.assigned.length, 1);
+    const app = new URL(page.assigned[0]);
+    assert.equal(app.protocol, 'metamask:');
+    assert.equal(app.host, 'dapp');
+    assert.equal(app.searchParams.get('to'), recipient);
+    assert.equal(app.searchParams.get('name'), '사랑 분식');
+    assert.equal(app.searchParams.get(kind === 'transfer' ? 'mst' : 'won'), kind === 'transfer' ? '5' : '5000');
+    assert.equal(app.searchParams.has('open'), false);
+    assert.match(page.screen.innerHTML, /https:\/\/metamask.io\/download\//);
+    assert.match(page.screen.innerHTML, /target="_blank"/);
+    assert.match(page.screen.innerHTML, /설치·계정 생성 후 이 브라우저의 현재 탭으로 돌아와/);
+    assert.match(page.screen.innerHTML, /Mustree 네트워크 추가·전환/);
+    page.walletState({status:'unavailable'});
+    assert.equal(page.assigned.length, 1, 'resuming an uninstalled app must not repeatedly launch it');
+    assert.equal(page.requests.length, 0);
+  });
+}
+
+test('an available wallet never launches another app from QR entry', () => {
+  const page = harness({autoOpen:true});
+  assert.equal(page.assigned.length, 0);
+  assert.match(page.screen.innerHTML, /id="transferAmount"/);
+});
+
+test('a browser rejecting app launch retains installation and continuation links', () => {
+  const page = harness({noProvider:true, autoOpen:true, blockedApp:true});
+  assert.equal(page.assigned.length, 1);
+  assert.match(page.screen.innerHTML, /MetaMask 설치하기/);
+  assert.match(page.screen.innerHTML, /앱에서 결제 이어하기/);
+  assert.match(page.screen.innerHTML, new RegExp(recipient));
+  assert.equal(page.requests.length, 0);
+});
+
 test('mobile payment handoff targets the payment document directly', () => {
   const page = harness({ noProvider:true });
   const url = new URL(page.screen.innerHTML.match(/href="([^"]+)"/)[1].replaceAll('&amp;', '&'));
-  assert.equal(url.pathname, '/dapp/bazaar.mustree.kr/pay.html');
+  assert.equal(url.protocol, 'metamask:');
+  assert.equal(url.host, 'dapp');
+  assert.equal(url.pathname, '/bazaar.mustree.kr/pay.html');
   assert.equal(url.searchParams.get('to'), recipient);
   assert.equal(url.searchParams.get('won'), '5000');
 });

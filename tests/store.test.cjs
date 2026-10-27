@@ -100,6 +100,7 @@ test('store polls every five seconds and updates deposits without replacing QR o
   const flush=()=>new Promise(resolve=>setImmediate(resolve));
   await flush();
   assert.equal(intervalMs,5000);
+  assert.match(node('storeScreen').innerHTML, /href="\/pay.html\?mode=transfer&open=1"/);
   assert.equal(queries,1);
   const screenWrites=node('storeScreen').writes, initialHistoryWrites=node('storeHistory').writes;
   node('storeName').value='아직 저장하지 않은 이름';

@@ -119,7 +119,8 @@
   }
 
   // Only allowlisted metadata is retained; request parameters and error data are never logged.
-  function createDiagnostics({ storage = null, now = () => new Date().toISOString() } = {}) {
+  // The copied text lists only this device's failures: the latest 30, repeats collapsed, first message line only.
+  function createDiagnostics({ storage = null, now = () => new Date().toISOString(), device = '' } = {}) {
     const key = 'bazaar-wallet-diagnostics-v1';
     const clean = value => String(value ?? '').replace(/\b(?:0x)?[0-9a-f]{64,}\b/gi, '[redacted hex]')
       .replace(/(?:private[ _-]?key|mnemonic|seed[ _-]?phrase|secret|signature|authorization)[^\n]*/gi, '[redacted sensitive text]').slice(0, 500);
@@ -143,6 +144,17 @@
       return entry;
     };
     try { records = JSON.parse(storage?.getItem(key) || '[]').slice(-200).map(sanitize); } catch {}
+    const failures = () => {
+      const rows = [];
+      for (const record of records) {
+        if (!record.errors?.length) continue;
+        const errors = record.errors.map(error => ({ code:error.code, message:error.message.split('\n')[0].trim() }));
+        const last = rows[rows.length - 1], same = last && last.stage === record.stage && JSON.stringify(last.errors) === JSON.stringify(errors);
+        if (same) { last.repeat = (last.repeat || 1) + 1; last.lastTime = record.time; if (record.hash) last.hash = record.hash; continue; }
+        rows.push({ ...record, errors });
+      }
+      return rows.slice(-30);
+    };
     return {
       record(item) {
         records.push(sanitize(item)); records = records.slice(-200);
@@ -150,14 +162,14 @@
         notify();
       },
       snapshot:() => JSON.parse(JSON.stringify(records)),
-      text:() => JSON.stringify({ version:1, expectedChainId:NETWORK.chainId, records }, null, 2),
+      text:() => JSON.stringify({ version:2, device:clean(device), expectedChainId:NETWORK.chainId, failures:failures() }, null, 2),
       subscribe(fn) { notify = fn; }
     };
   }
   function diagnosticsFor(win) {
     if (win.__bazaarDiagnostics) return win.__bazaarDiagnostics;
     let storage; try { storage = win.sessionStorage; } catch {}
-    const diagnostics = createDiagnostics({ storage });
+    const diagnostics = createDiagnostics({ storage, device:win.navigator?.userAgent || '' });
     win.__bazaarDiagnostics = diagnostics;
     const doc = win.document;
     if (doc?.body && doc.createElement) {

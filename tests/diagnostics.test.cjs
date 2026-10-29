@@ -20,6 +20,21 @@ test('diagnostics never serialize parameters, error data, signatures or private 
   for(let i=0;i<250;i++)d.record({stage:'read'});
   assert.equal(d.snapshot().length,200);
 });
+test('copied diagnostics list only this device failures: capped, repeats collapsed, first message line',()=>{
+  const d=createDiagnostics({device:'Mozilla/5.0 (Linux; Android 14; SM-S918N)'});
+  d.record({stage:'eth_chainId:success',chainId:'0x1db1'});
+  d.record({stage:'payment:legacy-fee-fallback',chainId:'0x1db1'});
+  for(let i=0;i<3;i++)d.record({stage:'eth_getBalance:failure',chainId:'0x1db1',error:{code:-32603,message:'Cronet failed: net::ERR_NAME_NOT_RESOLVED\n\tat com.example.Stack(SourceFile:48)'}});
+  const out=JSON.parse(d.text());
+  assert.equal(out.device,'Mozilla/5.0 (Linux; Android 14; SM-S918N)');
+  assert.equal(out.failures.length,1);assert.equal(out.failures[0].repeat,3);
+  assert.deepEqual(out.failures[0].errors,[{code:'-32603',message:'Cronet failed: net::ERR_NAME_NOT_RESOLVED'}]);
+  assert.ok(!d.text().includes('success'));assert.ok(!d.text().includes('SourceFile'));
+  assert.equal(d.snapshot().length,5);
+  for(let i=0;i<50;i++)d.record({stage:'send:failure:'+i,error:{code:-32000,message:'fail '+i}});
+  const capped=JSON.parse(d.text()).failures;
+  assert.equal(capped.length,30);assert.equal(capped.at(-1).stage,'send:failure:49');
+});
 function ui({denied=false}={}){
   const events={},nodes=new Map();let copied,selected=false;
   const node=selector=>{if(!nodes.has(selector))nodes.set(selector,{value:'',querySelector:node,addEventListener(type,fn){events[selector+':'+type]=fn;},focus(){},select(){selected=true;}});return nodes.get(selector);};

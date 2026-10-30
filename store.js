@@ -30,7 +30,7 @@
     }
     const accountKey = state.account.toLowerCase();
     if (renderedAccount !== accountKey) {
-      screen.innerHTML = `<div class="store-name-row"><div><input id="storeName" maxlength="30" value="${UI.esc(state.name)}" aria-label="가게 이름 (선택)" placeholder="가게 이름 (선택)"><button type="button" data-store="save-name">저장</button></div></div><section class="store-card"><div class="store-card-title"><span>받기 QR</span><strong id="storeQrName"></strong></div>${UI.qrMarkup('storeQr', '가게 받기 QR')}</section><a class="operator-secondary pay-link-button" href="/pay.html?mode=transfer${preview ? '&preview=1' : ''}">송금하기</a><div id="storeHistory"></div><div id="storeStatus" hidden></div>`;
+      screen.innerHTML = `<div class="store-name-row"><div><input id="storeName" maxlength="30" value="${UI.esc(state.name)}" aria-label="가게 이름 (선택)" placeholder="가게 이름 (선택)"><button type="button" data-store="save-name">저장</button></div></div><section class="store-card"><div class="store-card-title"><span>받기 QR</span><strong id="storeQrName"></strong></div>${UI.qrMarkup('storeQr', '가게 받기 QR')}</section><a class="operator-secondary pay-link-button" href="/pay.html?mode=transfer${preview ? '&preview=1' : '&open=1'}">송금하기</a><div id="storeHistory"></div><div id="storeStatus" hidden></div>`;
       renderedAccount = accountKey; renderedName = undefined; renderedQr = undefined; settledHistoryAccount = undefined;
     }
     if (renderedName !== state.name) {

@@ -22,22 +22,25 @@ test('parser reads and limits the store name in payment and MetaMask QR links', 
   const longName = '가'.repeat(50);
   assert.equal(Transfer.parseRecipient('https://bazaar.mustree.kr/pay.html?to='+recipient+'&name='+encodeURIComponent(longName)).name.length, 30);
 });
-test('store QR opens the payment document directly inside MetaMask and remains scannable in the app', () => {
+test('store QR retains a web destination for installation recovery and remains scannable in the app', () => {
   const link = Transfer.receiveLink(account, {name:'사랑 분식'});
   const url = new URL(link);
-  assert.equal(url.origin, 'https://link.metamask.io');
-  assert.equal(url.pathname, '/dapp/bazaar.mustree.kr/pay.html');
+  assert.equal(url.origin, 'https://bazaar.mustree.kr');
+  assert.equal(url.searchParams.get('open'), '1');
+  assert.equal(url.pathname, '/pay.html');
   assert.equal(url.searchParams.get('to'), account);
   assert.equal(url.searchParams.get('name'), '사랑 분식');
   assert.equal(Transfer.parseRecipient(link)?.address, account);
+  assert.equal(Transfer.parseRecipient(Transfer.appLink('/pay.html', {to:account}))?.address, account, 'previously printed MetaMask QR links stay readable');
   assert.equal(new URL(Transfer.receiveLink(account)).searchParams.has('name'), false);
-  for (const bad of [link.replace('link.metamask.io', 'fake.test'), link.replace('bazaar.mustree.kr/', 'bazaar.mustree.kr.fake.test/'), link.replace('https:', 'http:')]) assert.equal(Transfer.parseRecipient(bad), null);
+  for (const bad of [link.replace('bazaar.mustree.kr', 'fake.test'), link.replace('bazaar.mustree.kr/', 'bazaar.mustree.kr.fake.test/'), link.replace('https:', 'javascript:')]) assert.equal(Transfer.parseRecipient(bad), null);
 });
 test('receive QR targets the top-up document and rejects foreign deep link destinations', () => {
   const link = Transfer.receiveLink(account, {topup:true});
   const url = new URL(link);
-  assert.equal(url.origin, 'https://link.metamask.io');
-  assert.equal(url.pathname, '/dapp/bazaar.mustree.kr/operator.html');
+  assert.equal(url.origin, 'https://bazaar.mustree.kr');
+  assert.equal(url.searchParams.get('open'), '1');
+  assert.equal(url.pathname, '/operator.html');
   assert.equal(url.searchParams.get('to'), account);
   assert.equal(Transfer.parseRecipient(link)?.address, account);
   assert.equal(Transfer.parseRecipient('https://bazaar.mustree.kr/operator.html?to='+account)?.address, account);

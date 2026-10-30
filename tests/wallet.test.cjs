@@ -5,6 +5,13 @@ const {createWallet, createRpcBalanceReader, NETWORK, TOKEN, discover} = require
 const {TEST_TOKEN} = require('./fixtures.cjs');
 const A = '0x' + '1'.repeat(40), B = '0x' + '2'.repeat(40);
 const wait = () => new Promise(resolve => setTimeout(resolve, 15));
+
+test('RPC backoff and Android DNS failures are distinct from pending approval errors', () => {
+  const {errorCode} = require('../wallet.js');
+  assert.equal(errorCode({code:-32002,message:'RPC endpoint returned too many errors, retrying in 0.3 minutes.'}), 'RPC_UNAVAILABLE');
+  assert.equal(errorCode({code:-32603,data:{originalError:{message:'Cronet failed: net::ERR_NAME_NOT_RESOLVED'}}}), 'RPC_UNAVAILABLE');
+  assert.equal(errorCode({code:-32002,message:'Request already pending'}), -32002);
+});
 function deferred(){let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return{promise,resolve,reject};}
 class Provider extends EventEmitter {
   constructor(options={}){

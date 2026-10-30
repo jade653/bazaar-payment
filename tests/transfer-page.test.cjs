@@ -76,7 +76,7 @@ test('insufficient payment shows one top-up dialog with the latest checked balan
 test('the top-up scanner accepts a receive deep link and charges exactly the cash amount', async () => {
   const page = harness({kind:'topup', preview:true});
   await page.click('connect');
-  assert.match(page.screen.innerHTML, /수수료 잔량/);
+  assert.doesNotMatch(page.screen.innerHTML, /수수료 잔량|충전 가능/, 'the top-up form no longer shows the operator fee headroom');
   await page.click('scan');
   assert.equal(page.scan(Transfer.receiveLink(recipient, {topup:true})), true);
   assert.match(page.screen.innerHTML, new RegExp(recipient));
@@ -91,7 +91,7 @@ for (const [value, displayed] of [['1','1'],['1505','1,505']]) {
   test(`${value} won top-up sends the same wMST amount plus the fixed gas allowance in one transaction`, async () => {
     const page = harness({kind:'topup', value});
     assert.ok(page.screen.innerHTML.includes('data-transfer="submit">'+displayed+' MST 충전하기</button>'));
-    assert.match(page.screen.innerHTML, /수수료 잔량<\/span><strong>약 [\d,]+회 충전 가능/);
+    assert.doesNotMatch(page.screen.innerHTML, /수수료 잔량/);
     await page.click('submit');
     const sends = page.requests.filter(request=>request.method==='eth_sendTransaction');
     assert.equal(sends.length,1);

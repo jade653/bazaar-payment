@@ -69,7 +69,7 @@ function prepareScreen(){
 function balanceScreen(){
   const failed=currentId==='balance-error';
   return title('내 지갑')+UI.balance({account:previewAccount,balanceWei:toUnits(balance),failed,copyAttributes:'data-action="copy-preview-wallet"',refreshAttributes:'data-action="refresh-preview-balance"'})+
-    (failed?`<div class="balance-actions single">${action('다시 확인','primary','data-action="retry-balance"')}</div>`:`<div class="balance-actions">${goButton('충전하기','receive')}${goButton('가게 결제하기','pay-manual','secondary')}<a class="home-store-link" href="store.html?preview=1">내 가게</a></div>${UI.history({items:[{timestamp:Date.now()/1000-300,direction:'out',valueWei:toUnits(2000),balanceWei:toUnits(11000)},{timestamp:Date.now()/1000-600,direction:'in',valueWei:toUnits(5500),balanceWei:toUnits(13000)}]},{compact:true})}`);
+    (failed?`<div class="balance-actions single">${action('다시 확인','primary','data-action="retry-balance"')}</div>`:`<div class="balance-actions">${goButton('충전하기','receive')}${goButton('가게 결제하기','pay-manual','secondary')}<a class="home-store-link" href="store.html?preview=1">송금·받기</a></div>${UI.history({items:[{timestamp:Date.now()/1000-300,direction:'out',valueWei:toUnits(2000),balanceWei:toUnits(11000)},{timestamp:Date.now()/1000-600,direction:'in',valueWei:toUnits(5500),balanceWei:toUnits(13000)}]},{compact:true})}`);
 }
 
 function receiveScreen(){

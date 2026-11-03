@@ -161,3 +161,51 @@ for (const error of [{code:4001}, {code:-32002}, {code:-32602,message:'Invalid r
     assert.equal(provider.count('eth_sendTransaction'), 1);
   });
 }
+
+const accountRejected = () => ({code:-32602,message:'Invalid parameters: must provide an Ethereum address.'});
+for (const kind of ['payment','topup']) test(`${kind} re-confirms account access once when MetaMask rejects the sender address before approval`, async t => {
+  const provider = new Provider();
+  let rejections = 0;
+  provider.hooks.eth_sendTransaction = ([tx]) => {
+    assert.equal(tx.from, A);
+    if (provider.count('eth_requestAccounts') === 0) { rejections++; throw accountRejected(); }
+    return hash;
+  };
+  const p = page({provider, kind});
+  t.after(() => p.dispose());
+  await flush();
+  const before = provider.count('eth_requestAccounts');
+  provider.hooks.eth_sendTransaction = ([tx]) => {
+    assert.equal(tx.from, A);
+    if (provider.count('eth_requestAccounts') === before) { rejections++; throw accountRejected(); }
+    return hash;
+  };
+  await p.click('submit'); await flush();
+  assert.equal(rejections, 1);
+  assert.equal(provider.count('eth_requestAccounts'), before + 1);
+  assert.equal(provider.count('eth_sendTransaction'), 2);
+  assert.match(p.screen.innerHTML, kind === 'topup' ? /충전 완료/ : /결제 완료/);
+  assert.ok(p.diagnostics.snapshot().some(row => row.stage === 'prompt:payment-account-refresh'));
+});
+test('a second sender-address rejection stops after one retry and asks to restart MetaMask', async t => {
+  const provider = new Provider();
+  const p = page({provider});
+  t.after(() => p.dispose());
+  await flush();
+  provider.hooks.eth_sendTransaction = () => { throw {code:-32603,data:{originalError:accountRejected()}}; };
+  await p.click('submit'); await flush();
+  assert.equal(provider.count('eth_sendTransaction'), 2);
+  assert.match(p.screen.innerHTML, /MetaMask 앱을 완전히 종료한 뒤 다시 열고 다시 시도해 주세요/);
+  assert.doesNotMatch(p.screen.innerHTML, /결제 완료/);
+});
+test('a cancelled approval is never retried by the sender-address recovery', async t => {
+  const provider = new Provider();
+  const p = page({provider});
+  t.after(() => p.dispose());
+  await flush();
+  const before = provider.count('eth_requestAccounts');
+  provider.hooks.eth_sendTransaction = () => { throw {code:4001,message:'User rejected the request.'}; };
+  await p.click('submit'); await flush();
+  assert.equal(provider.count('eth_sendTransaction'), 1);
+  assert.equal(provider.count('eth_requestAccounts'), before);
+});

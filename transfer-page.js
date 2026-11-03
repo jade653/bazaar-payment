@@ -37,10 +37,11 @@
     UI.showBalanceDialog(screen, dismissInsufficient);
   }
   function dismissInsufficient() { set({ insufficient:false, status:'' }); document.getElementById('transferAmount')?.focus(); }
-  function set(next) { state = { ...state, ...next }; render(); }
+  // A payment error stays visible through wallet re-checks until another status replaces it.
+  function set(next) { if ('status' in next && !('paymentError' in next)) next = { ...next, paymentError:false }; state = { ...state, ...next }; render(); }
   function onWallet(snapshot) {
     if (snapshot.status === 'ready') {
-      set({ walletBlocked:false, needsApp:false, account:snapshot.account, balanceWei:snapshot.balanceWei, gasWei:snapshot.gasWei ?? null, topUpsLeft:isTopup && snapshot.gasWei != null ? Transfer.topUpsAffordable(snapshot.gasWei, Wallet.TOKEN) : null, step:state.step === 'connect' ? 'form' : state.step, status:state.step === 'sending' ? state.status : '' });
+      set({ walletBlocked:false, needsApp:false, account:snapshot.account, balanceWei:snapshot.balanceWei, gasWei:snapshot.gasWei ?? null, topUpsLeft:isTopup && snapshot.gasWei != null ? Transfer.topUpsAffordable(snapshot.gasWei, Wallet.TOKEN) : null, step:state.step === 'connect' ? 'form' : state.step, status:state.step === 'sending' || state.paymentError ? state.status : '', paymentError:state.paymentError });
     } else {
       const invalid = ['idle','needs-network','disconnected','unavailable'].includes(snapshot.status);
       const message = snapshot.status === 'cancelled' ? '연결이 취소됐어요. 지갑 연결 다시 시도를 눌러주세요.'
@@ -48,7 +49,7 @@
         : ['connecting','adding','switching','pending'].includes(snapshot.status) ? 'MetaMask에서 확인을 눌러주세요.'
         : snapshot.status === 'querying' ? '잔액을 확인하고 있어요.'
         : invalid ? '지갑을 연결해 주세요.' : '지갑을 연결하지 못했어요.';
-      set({ walletBlocked:['pending','cancelled','needs-network','error','disconnected'].includes(snapshot.status), needsApp:snapshot.status === 'unavailable', account:null, balanceWei:null, gasWei:null, topUpsLeft:null, status:state.step === 'sending' ? state.status : message });
+      set({ walletBlocked:['pending','cancelled','needs-network','error','disconnected'].includes(snapshot.status), needsApp:snapshot.status === 'unavailable', account:null, balanceWei:null, gasWei:null, topUpsLeft:null, ...(state.step === 'sending' || (state.paymentError && snapshot.status === 'querying') ? { status:state.status, paymentError:state.paymentError } : { status:message }) });
       // Keep this destination page open behind the app, including after installation.
       // Browsers may require a second, explicit tap to launch a custom scheme.
       if (snapshot.status === 'unavailable' && params.get('open') === '1' && !appOpenAttempted) {
@@ -97,7 +98,7 @@
     log('payment:failure', error, error?.hash || state.hash);
     controller?.suspendPrompts?.(Wallet.errorCode?.(error) ?? error?.code);
     if (error?.hash && !state.hash) state.hash = error.hash;
-    set({ step:state.hash && !terminal ? 'sending' : 'form', hash:terminal ? null : state.hash, status:UI.errorText(Wallet.errorCode?.(error) ?? error?.code, kind), insufficient:error?.code === 'INSUFFICIENT_BALANCE', balanceWei:error?.balanceWei ?? state.balanceWei, gasWei:error?.gasWei ?? state.gasWei });
+    set({ step:state.hash && !terminal ? 'sending' : 'form', hash:terminal ? null : state.hash, status:UI.errorText(Wallet.errorCode?.(error) ?? error?.code, kind), paymentError:true, insufficient:error?.code === 'INSUFFICIENT_BALANCE', balanceWei:error?.balanceWei ?? state.balanceWei, gasWei:error?.gasWei ?? state.gasWei });
   }
   async function refreshBalance() {
     // A balance refresh failure must not change a confirmed transfer back to pending.

@@ -79,6 +79,20 @@
     }
     return false;
   }
+  // MetaMask rejects the send before any approval when `from` is not among the accounts it currently
+  // permits for this site (older wallet middleware words this as a missing address). Seen on iOS
+  // MetaMask Mobile right after a network add/switch while eth_accounts still lists the account.
+  function accountNotPermitted(error) {
+    const queue = [error], seen = new Set();
+    while (queue.length && seen.size < 16) {
+      const item = queue.shift();
+      if (!item || typeof item !== 'object' || seen.has(item)) continue;
+      seen.add(item);
+      if (Number(item.code) === -32602 && /must provide an Ethereum address/i.test(String(item.message || ''))) return true;
+      queue.push(item.cause, item.error, item.data, item.originalError);
+    }
+    return false;
+  }
   async function prepare(provider, { account, recipient, value, kind = 'payment', chainId, token, readBalanceFromRpc }) {
     const to = parseRecipient(recipient)?.address;
     if (!to) throw failure('INVALID_ADDRESS');
@@ -193,17 +207,32 @@
         try { prepared = await prepare(rpc, { ...details, chainId, token }); }
         catch (error) { log('payment:prepare:failure', error); throw error; }
         // Include chainId so the wallet can also reject a network change at approval time.
+        // Both recoveries below handle exact parameter-validation rejections that happen before
+        // approval/submission. Never retry cancellations, connection failures or unknown send outcomes.
+        async function submit() {
+          try {
+            return await rpc.request({ method:'eth_sendTransaction', params:[{ ...prepared.transaction, chainId }] });
+          } catch (error) {
+            if (!unsupportedFeeFormat(error)) throw error;
+            log('payment:legacy-fee-fallback');
+            prepared = await prepare(rpc, { ...details, chainId, token });
+            const { maxFeePerGas, maxPriorityFeePerGas, ...transaction } = prepared.transaction;
+            return await rpc.request({ method:'eth_sendTransaction', params:[{ ...transaction, gasPrice:maxFeePerGas, chainId }] });
+          }
+        }
         let hash;
-        try {
-          hash = await rpc.request({ method:'eth_sendTransaction', params:[{ ...prepared.transaction, chainId }] });
-        } catch (error) {
-          // This exact parameter-validation rejection happens before approval/submission.
-          // Never retry cancellations, connection failures or unknown send outcomes.
-          if (!unsupportedFeeFormat(error)) throw error;
-          log('payment:legacy-fee-fallback');
+        try { hash = await submit(); }
+        catch (error) {
+          if (!accountNotPermitted(error)) throw error;
+          // Re-confirm account access (a connect sheet only if MetaMask needs one), then send once more.
+          log('prompt:payment-account-refresh');
+          await rpc.request({ method:'eth_requestAccounts' });
           prepared = await prepare(rpc, { ...details, chainId, token });
-          const { maxFeePerGas, maxPriorityFeePerGas, ...transaction } = prepared.transaction;
-          hash = await rpc.request({ method:'eth_sendTransaction', params:[{ ...transaction, gasPrice:maxFeePerGas, chainId }] });
+          try { hash = await submit(); }
+          catch (retryError) {
+            if (accountNotPermitted(retryError)) throw Object.assign(failure('ACCOUNT_NOT_PERMITTED'), { cause:retryError });
+            throw retryError;
+          }
         }
         if (!HASH.test(hash || '')) throw failure('INVALID_TX_HASH');
         pendingHash = hash; pendingAccount = details.account;

@@ -77,7 +77,8 @@
       RPC_UNAVAILABLE:'지갑 통신이 불안정해요. 와이파이·모바일 데이터를 바꾼 뒤 다시 시도해 주세요.',
       INSUFFICIENT_GAS:operator ? '충전 지갑의 수수료용 MST가 부족해요. 운영 지갑에서 MST를 보충해 주세요.' : '수수료 잔액이 부족해요. 직원에게 충전을 요청해 주세요.',
       TOKEN_NOT_CONFIGURED:operator ? '발행된 wMST 주소가 아직 설정되지 않았어요. setup 페이지의 설정값을 반영해 주세요.' : '서비스 준비가 아직 끝나지 않았어요. 직원에게 문의해 주세요. (설정 없음)',
-      TRANSACTION_FAILED:'송금이 완료되지 않았어요. 다시 시도해 주세요.', RECEIPT_TIMEOUT:'확인이 지연되고 있어요. 기존 거래 결과를 다시 확인해 주세요.', PENDING_TRANSACTION:'기존 거래 결과를 먼저 확인해 주세요.' })[code] || '처리하지 못했어요. 다시 확인해 주세요.';
+      TRANSACTION_FAILED:'송금이 완료되지 않았어요. 다시 시도해 주세요.', RECEIPT_TIMEOUT:'확인이 지연되고 있어요. 기존 거래 결과를 다시 확인해 주세요.', PENDING_TRANSACTION:'기존 거래 결과를 먼저 확인해 주세요.',
+      ACCOUNT_NOT_PERMITTED:'MetaMask가 이 사이트의 지갑 연결을 확인하지 못했어요. MetaMask 앱을 완전히 종료한 뒤 다시 열고 다시 시도해 주세요.' })[code] || '처리하지 못했어요. 다시 확인해 주세요.';
   }
   return { esc, short, mst, won, button, alert, receiveTitle, transfer, showBalanceDialog, history, balance, qrMarkup, receiveAddress, renderQr, errorText };
 });

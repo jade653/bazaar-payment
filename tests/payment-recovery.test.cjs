@@ -21,6 +21,8 @@ class Provider extends EventEmitter {
     if(method==='eth_getBalance') return '0x56bc75e2d63100000';
     if(method==='eth_call') return '0x186a0';
     if(method==='eth_requestAccounts') { this.accounts=[A]; this.emit('accountsChanged',this.accounts); return this.accounts; }
+    if(method==='wallet_getPermissions') return [{parentCapability:'eth_accounts',caveats:[{type:'restrictReturnedAccounts',value:[...this.accounts]}]}];
+    if(method==='wallet_requestPermissions') { this.accounts=[A]; this.emit('accountsChanged',this.accounts); return [{parentCapability:'eth_accounts'}]; }
     if(method==='wallet_addEthereumChain') { this.registered=true; return null; }
     if(method==='wallet_switchEthereumChain') { if(!this.registered)throw {code:4902,message:'Unknown chain'}; this.chain=params[0].chainId; this.emit('chainChanged',this.chain); return null; }
     if(method==='eth_sendTransaction') return hash;
@@ -163,26 +165,26 @@ for (const error of [{code:4001}, {code:-32002}, {code:-32602,message:'Invalid r
 }
 
 const accountRejected = () => ({code:-32602,message:'Invalid parameters: must provide an Ethereum address.'});
-for (const kind of ['payment','topup']) test(`${kind} re-confirms account access once when MetaMask rejects the sender address before approval`, async t => {
+for (const kind of ['payment','topup']) test(`${kind} asks for the account permission once when MetaMask rejects the sender address before approval`, async t => {
   const provider = new Provider();
   let rejections = 0;
   provider.hooks.eth_sendTransaction = ([tx]) => {
     assert.equal(tx.from, A);
-    if (provider.count('eth_requestAccounts') === 0) { rejections++; throw accountRejected(); }
+    if (provider.count('wallet_requestPermissions') === 0) { rejections++; throw accountRejected(); }
     return hash;
   };
   const p = page({provider, kind});
   t.after(() => p.dispose());
   await flush();
-  const before = provider.count('eth_requestAccounts');
+  const before = provider.count('wallet_requestPermissions');
   provider.hooks.eth_sendTransaction = ([tx]) => {
     assert.equal(tx.from, A);
-    if (provider.count('eth_requestAccounts') === before) { rejections++; throw accountRejected(); }
+    if (provider.count('wallet_requestPermissions') === before) { rejections++; throw accountRejected(); }
     return hash;
   };
   await p.click('submit'); await flush();
   assert.equal(rejections, 1);
-  assert.equal(provider.count('eth_requestAccounts'), before + 1);
+  assert.equal(provider.count('wallet_requestPermissions'), before + 1);
   assert.equal(provider.count('eth_sendTransaction'), 2);
   assert.match(p.screen.innerHTML, kind === 'topup' ? /충전 완료/ : /결제 완료/);
   assert.ok(p.diagnostics.snapshot().some(row => row.stage === 'prompt:payment-account-refresh'));
@@ -203,9 +205,9 @@ test('a cancelled approval is never retried by the sender-address recovery', asy
   const p = page({provider});
   t.after(() => p.dispose());
   await flush();
-  const before = provider.count('eth_requestAccounts');
+  const before = provider.count('wallet_requestPermissions');
   provider.hooks.eth_sendTransaction = () => { throw {code:4001,message:'User rejected the request.'}; };
   await p.click('submit'); await flush();
   assert.equal(provider.count('eth_sendTransaction'), 1);
-  assert.equal(provider.count('eth_requestAccounts'), before);
+  assert.equal(provider.count('wallet_requestPermissions'), before);
 });

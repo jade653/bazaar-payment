@@ -18,13 +18,20 @@ class Provider extends EventEmitter {
     super();this.accounts=options.accounts??[A];this.chain=options.chain??NETWORK.chainId;
     this.added=options.added??true;this.autoSwitch=options.autoSwitch??false;
     this.raw=options.raw??'0x989680';this.gas=options.gas??'0x2386f26fc10000';this.calls=[];this.hooks={};
+    this.permitted=options.permitted??true;this.permissionShape=options.permissionShape??'eth_accounts';
   }
   async request({method,params}){
     this.calls.push({method,params});
     if(this.hooks[method])return this.hooks[method](params);
     switch(method){
       case'eth_accounts':return [...this.accounts];
-      case'eth_requestAccounts':this.accounts=[A];this.emit('accountsChanged',this.accounts);return [...this.accounts];
+      case'eth_requestAccounts':this.accounts=[A];this.permitted=true;this.emit('accountsChanged',this.accounts);return [...this.accounts];
+      case'wallet_getPermissions':
+        if(!this.permitted||!this.accounts.length)return [];
+        return this.permissionShape==='caip25'
+          ?[{parentCapability:'endowment:caip25',caveats:[{type:'authorizedScopes',value:{requiredScopes:{},optionalScopes:{'eip155:1':{accounts:this.accounts.map(a=>'eip155:1:'+a)}}}}]}]
+          :[{parentCapability:'eth_accounts',caveats:[{type:'restrictReturnedAccounts',value:[...this.accounts]}]}];
+      case'wallet_requestPermissions':this.accounts=[A];this.permitted=true;this.emit('accountsChanged',this.accounts);return [{parentCapability:'eth_accounts'}];
       case'eth_chainId':return this.chain;
       case'wallet_switchEthereumChain':
         if(!this.added)throw{code:4902};this.chain=params[0].chainId;this.emit('chainChanged',this.chain);return null;
@@ -75,7 +82,7 @@ test('adding a chain that automatically switches does not ask to switch again',a
 test('already permitted user on Mustree receives no approval prompts',async t=>{
   const p=new Provider(),f=fixture(p);t.after(()=>f.wallet.dispose());await f.wallet.setup();
   assert.equal(f.wallet.getSnapshot().status,'ready');
-  assert.ok(!f.methods().some(x=>x.startsWith('wallet_')||x==='eth_requestAccounts'));
+  assert.ok(!f.methods().some(x=>(x.startsWith('wallet_')&&x!=='wallet_getPermissions')||x==='eth_requestAccounts'));
 });
 test('page entry requests account access and switches to Mustree automatically',async t=>{
   const p=new Provider({accounts:[],chain:'0x1'}),f=fixture(p);t.after(()=>f.wallet.dispose());await f.wallet.restore();
@@ -175,7 +182,7 @@ test('EIP-6963 selects MetaMask instead of another injected wallet',async()=>{
 });
 test('wallet request methods never include signing or sending a transaction',async t=>{
   const p=new Provider({accounts:[],chain:'0x1',added:false}),f=fixture(p);t.after(()=>f.wallet.dispose());await f.wallet.setup();await f.wallet.refresh();
-  assert.ok(f.methods().every(method=>['eth_accounts','eth_requestAccounts','eth_chainId','eth_getBalance','eth_call','wallet_switchEthereumChain','wallet_addEthereumChain'].includes(method)));
+  assert.ok(f.methods().every(method=>['eth_accounts','eth_requestAccounts','eth_chainId','eth_getBalance','eth_call','wallet_getPermissions','wallet_requestPermissions','wallet_switchEthereumChain','wallet_addEthereumChain'].includes(method)));
 });
 function pageLifecycle({visibilityState='visible',readyState}={}){
   const listeners={};const on=(key,fn)=>(listeners[key]||=[]).push(fn);const fire=(key,event)=>[...(listeners[key]||[])].forEach(fn=>fn(event));
@@ -201,7 +208,7 @@ test('a hidden page sends no sheet request and connects after it becomes visible
   life.show();await pause(10);assert.equal(prompted(p),false,'still settling');
   await pause(120);
   assert.equal(f.wallet.getSnapshot().status,'ready');assert.equal(p.chain,NETWORK.chainId);
-  assert.deepEqual(p.calls.filter(c=>c.method!=='eth_accounts'&&c.method!=='eth_chainId'&&c.method!=='eth_getBalance'&&c.method!=='eth_call').map(c=>c.method),
+  assert.deepEqual(p.calls.filter(c=>!['eth_accounts','eth_chainId','eth_getBalance','eth_call','wallet_getPermissions'].includes(c.method)).map(c=>c.method),
     ['eth_requestAccounts','wallet_switchEthereumChain','wallet_addEthereumChain','wallet_switchEthereumChain']);
 });
 test('hiding the page during the settle time cancels the request until it is visible again',async t=>{
@@ -228,4 +235,44 @@ test('a connection sheet with no answer logs a slow prompt and the copied record
 test('without a page lifecycle sheet requests are not delayed',async t=>{
   const p=new Provider({accounts:[]}),f=fixture(p,{promptSettleMs:10000});t.after(()=>f.wallet.dispose());
   await f.wallet.setup();assert.equal(f.wallet.getSnapshot().status,'ready');
+});
+test('permission parsing covers eth_accounts caveats, CAIP-25 scopes and unknown shapes',()=>{
+  const {permissionAllows}=require('../wallet.js'),other='0x'+'3'.repeat(40),upper='0x'+'A'.repeat(40);
+  assert.equal(permissionAllows([{parentCapability:'eth_accounts',caveats:[{type:'restrictReturnedAccounts',value:[upper]}]}],'0x'+'a'.repeat(40)),true);
+  assert.equal(permissionAllows([{parentCapability:'eth_accounts',caveats:[{type:'restrictReturnedAccounts',value:[other]}]}],A),false);
+  assert.equal(permissionAllows([{parentCapability:'eth_accounts'}],A),true);
+  assert.equal(permissionAllows([{parentCapability:'endowment:caip25',caveats:[{value:{requiredScopes:{},optionalScopes:{'eip155:7601':{accounts:['eip155:7601:'+A]}}}}]}],A),true);
+  assert.equal(permissionAllows([{parentCapability:'endowment:caip25',caveats:[{value:{optionalScopes:{'eip155:1':{accounts:['eip155:1:'+other]}}}}]}],A),false);
+  assert.equal(permissionAllows([],A),false);
+  assert.equal(permissionAllows(null,A),null);
+});
+for(const shape of ['eth_accounts','caip25'])test(`an account listed without a site permission (${shape}) gets a connection sheet, then add and switch`,async t=>{
+  const p=new Provider({accounts:[A],permitted:false,chain:'0x1',added:false,permissionShape:shape}),f=fixture(p);t.after(()=>f.wallet.dispose());
+  await f.wallet.restore();
+  assert.equal(f.wallet.getSnapshot().status,'ready');
+  assert.deepEqual(f.methods().filter(m=>(m.startsWith('wallet_')&&m!=='wallet_getPermissions')||m==='eth_requestAccounts'),
+    ['wallet_requestPermissions','wallet_switchEthereumChain','wallet_addEthereumChain','wallet_switchEthereumChain']);
+});
+test('a permitted account on Mustree reads the balance with only a permission read',async t=>{
+  const p=new Provider(),f=fixture(p);t.after(()=>f.wallet.dispose());await f.wallet.restore();
+  assert.equal(f.wallet.getSnapshot().status,'ready');assert.equal(p.calls.filter(c=>c.method==='wallet_getPermissions').length,1);
+});
+test('a wallet without wallet_getPermissions keeps trusting eth_accounts',async t=>{
+  const p=new Provider();p.hooks.wallet_getPermissions=()=>{throw {code:-32601,message:'Method not found'};};
+  const f=fixture(p);t.after(()=>f.wallet.dispose());await f.wallet.restore();
+  assert.equal(f.wallet.getSnapshot().status,'ready');assert.ok(!f.methods().includes('wallet_requestPermissions'));
+});
+test('a permission answer that stays empty after approval asks only once per session',async t=>{
+  const data=new Map(),sessionStorage={getItem:k=>data.get(k)??null,setItem:(k,v)=>data.set(k,v)};
+  const life=()=>({document:{visibilityState:'visible',addEventListener(){},removeEventListener(){}},addEventListener(){},removeEventListener(){},sessionStorage});
+  const p=new Provider({permitted:false});p.hooks.wallet_getPermissions=()=>[];
+  const f=fixture(p,{lifecycle:life(),promptSettleMs:0});t.after(()=>f.wallet.dispose());await f.wallet.restore();
+  assert.equal(f.wallet.getSnapshot().status,'ready');assert.equal(p.calls.filter(c=>c.method==='wallet_requestPermissions').length,1);
+  const g=fixture(p,{lifecycle:life(),promptSettleMs:0});t.after(()=>g.wallet.dispose());await g.wallet.restore();
+  assert.equal(g.wallet.getSnapshot().status,'ready');assert.equal(p.calls.filter(c=>c.method==='wallet_requestPermissions').length,1);
+});
+test('a declined permission sheet for an unpermitted account is reported as cancelled',async t=>{
+  const p=new Provider({permitted:false});p.hooks.wallet_requestPermissions=()=>{throw {code:4001,message:'User rejected'};};
+  const f=fixture(p);t.after(()=>f.wallet.dispose());await f.wallet.restore();
+  assert.equal(f.wallet.getSnapshot().status,'cancelled');assert.equal(f.wallet.getSnapshot().account,null);
 });

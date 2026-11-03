@@ -35,16 +35,36 @@
       topUpReserveWei: '88472000'
     })
   });
-  const ALLOWED = new Set(['eth_accounts', 'eth_requestAccounts', 'eth_chainId',
-    'eth_getBalance', 'eth_call', 'wallet_switchEthereumChain', 'wallet_addEthereumChain']);
-  const READS = ['eth_accounts', 'eth_chainId', 'eth_getBalance', 'eth_call'];
-  const PROMPT_STAGE = /^(?:(?:eth_requestAccounts|wallet_switchEthereumChain|wallet_addEthereumChain):request|prompt:.+)$/;
+  const ALLOWED = new Set(['eth_accounts', 'eth_requestAccounts', 'eth_chainId', 'eth_getBalance', 'eth_call',
+    'wallet_getPermissions', 'wallet_requestPermissions', 'wallet_switchEthereumChain', 'wallet_addEthereumChain']);
+  const READS = ['eth_accounts', 'eth_chainId', 'eth_getBalance', 'eth_call', 'wallet_getPermissions'];
+  const PROMPT_STAGE = /^(?:(?:eth_requestAccounts|wallet_requestPermissions|wallet_switchEthereumChain|wallet_addEthereumChain):request|prompt:.+)$/;
+  const PERMISSION_UNREADABLE = 'bazaar-wallet-permission-unreadable';
   const PENDING_TEXT = 'MetaMask에 처리되지 않은 요청이 남아 있어요. 앱 상단의 알림을 확인하고, 보이는 창이 없으면 MetaMask 앱을 완전히 종료한 뒤 다시 열어주세요.';
   const SLOW_PROMPT_TEXT = 'MetaMask 창이 보이지 않으면 MetaMask 앱을 완전히 종료한 뒤 다시 열어주세요.';
   const addressOK = value => typeof value === 'string' && /^0x[0-9a-f]{40}$/i.test(value);
   const hexOK = value => typeof value === 'string' && /^0x[0-9a-f]+$/i.test(value);
   const balanceOfData = (token, account) => token.selectors.balanceOf + account.slice(2).toLowerCase().padStart(64, '0');
   const sameChain = (a, b) => { try { return BigInt(a) === BigInt(b); } catch { return false; } };
+  // Whether wallet_getPermissions grants this site the account: true/false, or null when the answer
+  // has no recognizable shape. Covers the eth_accounts permission (restrictReturnedAccounts caveat)
+  // and the CAIP-25 endowment ("eip155:<chain>:<address>" accounts).
+  function permissionAllows(permissions, account) {
+    if (!Array.isArray(permissions) || !addressOK(account)) return null;
+    const target = account.toLowerCase();
+    for (const permission of permissions) {
+      const name = permission?.parentCapability, caveats = Array.isArray(permission?.caveats) ? permission.caveats : [];
+      if (name === 'eth_accounts') {
+        const listed = caveats.find(caveat => caveat?.type === 'restrictReturnedAccounts' && Array.isArray(caveat.value));
+        if (!listed || listed.value.some(item => String(item).toLowerCase() === target)) return true;
+      } else if (name === 'endowment:caip25') {
+        for (const caveat of caveats) for (const scopes of [caveat?.value?.requiredScopes, caveat?.value?.optionalScopes])
+          for (const scope of Object.values(scopes || {}))
+            if ((Array.isArray(scope?.accounts) ? scope.accounts : []).some(item => String(item).toLowerCase().endsWith(':' + target))) return true;
+      }
+    }
+    return false;
+  }
   function errorCode(error) {
     const queue = [error];
     const items = [];
@@ -210,6 +230,9 @@
     let state = { status:'idle', account:null, balanceWei:null, gasWei:null };
     let storage; try { storage = lifecycle?.sessionStorage; const saved = storage?.getItem('bazaar-wallet-prompt-hold');
       if (['cancelled','pending','error','needs-network'].includes(saved)) promptHold = saved; } catch {}
+    // Set when the wallet still reports no permission right after the user granted one, so a wallet
+    // whose permission answer cannot be read never asks for a connection on every page.
+    let permissionUnreadable = false; try { permissionUnreadable = storage?.getItem(PERMISSION_UNREADABLE) === '1'; } catch {}
     function hold(value) { promptHold = value; try { storage?.setItem('bazaar-wallet-prompt-hold', value); } catch {} }
     const log = (stage, error) => diagnostics?.record({ stage, chainId:actualChainId, error, visibility:doc?.visibilityState });
     const emit = (status, data = {}) => {
@@ -292,6 +315,17 @@
       provider?.removeListener?.('connect', changed); provider?.removeListener?.('disconnect', disconnected);
     }
     function assertCurrent(revision) { if (disposed || generation !== revision) throw failure('STALE'); }
+    // MetaMask Mobile can list an account in eth_accounts while the site holds no permission for it;
+    // sends from it are then rejected before approval. A missing or unreadable method trusts eth_accounts.
+    async function permitted(account, revision) {
+      if (permissionUnreadable) return true;
+      let permissions;
+      try { permissions = await call('wallet_getPermissions'); } catch { assertCurrent(revision); return true; }
+      assertCurrent(revision);
+      const allowed = permissionAllows(permissions, account);
+      if (allowed === false) log('permission:missing');
+      return allowed !== false;
+    }
     async function readBalance(revision) {
       emit('querying');
       const accounts = await call('eth_accounts'); assertCurrent(revision);
@@ -334,10 +368,24 @@
         await attach(); assertCurrent(revision);
         // Read both on every entry/resume/retry, even when account access is absent.
         let [accounts, chain] = await Promise.all([call('eth_accounts'), call('eth_chainId')]); assertCurrent(revision);
+        // An account the site holds no permission for counts as not connected.
+        const unpermitted = addressOK(accounts?.[0]) && !(await permitted(accounts[0], revision));
+        if (unpermitted) accounts = [];
         if ((!addressOK(accounts?.[0]) || !sameChain(chain, network.chainId)) && (promptHold || autoPaused) && !explicit) { emit(promptHold || 'pending'); return; }
         if (!addressOK(accounts?.[0])) {
           await promptWindow(revision);
-          emit('connecting'); accounts = await prompt(revision, 'eth_requestAccounts'); assertCurrent(revision);
+          emit('connecting');
+          if (unpermitted) {
+            // eth_requestAccounts can answer from the same stale account without a sheet;
+            // a permission request always shows the connection sheet.
+            await prompt(revision, 'wallet_requestPermissions', [{ eth_accounts:{} }]); assertCurrent(revision);
+            accounts = await call('eth_accounts'); assertCurrent(revision);
+            if (addressOK(accounts?.[0]) && !(await permitted(accounts[0], revision))) {
+              log('permission:unreadable'); permissionUnreadable = true;
+              try { storage?.setItem(PERMISSION_UNREADABLE, '1'); } catch {}
+            }
+          } else accounts = await prompt(revision, 'eth_requestAccounts');
+          assertCurrent(revision);
           if (!addressOK(accounts?.[0])) throw failure('NO_ACCOUNT');
           chain = await call('eth_chainId'); assertCurrent(revision);
         }
@@ -391,5 +439,5 @@
       }
     };
   }
-  return { NETWORK, TOKEN, createWallet, createRpcBalanceReader, discover, errorCode, createDiagnostics, diagnosticsFor };
+  return { NETWORK, TOKEN, createWallet, createRpcBalanceReader, discover, errorCode, permissionAllows, createDiagnostics, diagnosticsFor };
 });

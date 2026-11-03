@@ -81,7 +81,7 @@
   }
   // MetaMask rejects the send before any approval when `from` is not among the accounts it currently
   // permits for this site (older wallet middleware words this as a missing address). Seen on iOS
-  // MetaMask Mobile right after a network add/switch while eth_accounts still lists the account.
+  // MetaMask Mobile while eth_accounts still listed the account but the site had no permission.
   function accountNotPermitted(error) {
     const queue = [error], seen = new Set();
     while (queue.length && seen.size < 16) {
@@ -224,9 +224,10 @@
         try { hash = await submit(); }
         catch (error) {
           if (!accountNotPermitted(error)) throw error;
-          // Re-confirm account access (a connect sheet only if MetaMask needs one), then send once more.
+          // Ask for the account permission again (eth_requestAccounts can answer from the same stale
+          // account without a sheet; a permission request always shows one), then send once more.
           log('prompt:payment-account-refresh');
-          await rpc.request({ method:'eth_requestAccounts' });
+          await rpc.request({ method:'wallet_requestPermissions', params:[{ eth_accounts:{} }] });
           prepared = await prepare(rpc, { ...details, chainId, token });
           try { hash = await submit(); }
           catch (retryError) {

@@ -13,7 +13,7 @@
   const HASH = /^0x[0-9a-f]{64}$/i, ADDRESS = /^0x[0-9a-f]{40}$/i;
   const LOG_CHUNK = 50000, HEADER_BATCH = 100, HEADER_CAP = 300;
   const REFRESH_INTERVAL = 10000, RPC_TIMEOUT = 8000, RECENT_LIMIT = 50;
-  const STORES_KEY = 'bazaar-dashboard-stores-v1', OPERATORS_KEY = 'bazaar-dashboard-operators-v1';
+  const STORES_KEY = 'bazaar-dashboard-stores-v1', OPERATORS_KEY = 'bazaar-dashboard-operators-v1', NAMES_KEY = 'bazaar-dashboard-names-v1', NAME_LIMIT = 20;
   const failure = code => Object.assign(new Error(code), { code });
   const topicAddress = topic => '0x' + String(topic || '').slice(-40).toLowerCase();
   const blockOf = value => Number(BigInt(value || '0x0'));
@@ -162,6 +162,8 @@
     const loadList = name => { try { const saved = JSON.parse(storage?.getItem(name) || '[]'); return Array.isArray(saved) ? saved.filter(item => ADDRESS.test(item)).map(item => item.toLowerCase()) : []; } catch { return []; } };
     const saveList = (name, list) => { try { storage?.setItem(name, JSON.stringify(list)); } catch {} };
     let stores = loadList(STORES_KEY), operators = loadList(OPERATORS_KEY);
+    // Wallet names typed in the popup, also kept per browser: { address: name }.
+    let names = {}; try { const saved = JSON.parse(storage?.getItem(NAMES_KEY) || '{}'); for (const [address, name] of Object.entries(saved && typeof saved === 'object' ? saved : {})) if (ADDRESS.test(address) && typeof name === 'string' && name.trim()) names[address.toLowerCase()] = name.trim().slice(0, NAME_LIMIT); } catch {}
     const rendered = {};
     const won = value => UI.won(value);
     const timeOf = block => timestamps.get(block);
@@ -183,11 +185,15 @@
         card('회수 합계', won(summary.recovered), `${summary.recoveryCount.toLocaleString('ko-KR')}건`)
       ].join(''));
       const query = search.trim().toLowerCase();
-      const wallets = sortWallets(summary.wallets.filter(item => !query || item.address.includes(query)), sort);
+      const wallets = sortWallets(summary.wallets.filter(item => !query || item.address.includes(query) || (names[item.address] || '').toLowerCase().includes(query)), sort);
+      // Named wallets read as 0x and five hex digits followed by the first four characters of the name; the label box is fixed-width.
+      const label = address => names[address]
+        ? `<span class="dashboard-label" title="${UI.esc(names[address])}"><code>${address.slice(0, 7)}</code><b>${UI.esc([...names[address]].slice(0, 4).join(''))}</b></span>`
+        : `<span class="dashboard-label"><code>${UI.esc(shortAddress(address))}</code></span>`;
       const head = (label, keyName, numeric = true) => `<th${numeric ? ' class="num"' : ''}><button type="button" data-sort="${keyName}"${sort.key === keyName ? ' class="active"' : ''}>${label}${sort.key === keyName && keyName !== 'number' ? (sort.direction === 'desc' ? ' ↓' : ' ↑') : ''}</button></th>`;
       const rows = wallets.map(item => {
         const time = timeOf(item.lastBlock);
-        return `<tr data-wallet="${item.address}" tabindex="0" role="button"><td class="num">${item.isOperator ? '<span class="dashboard-chip operator">운영자</span>' : item.isStore ? '<span class="dashboard-chip store">가게</span>' : item.number ?? '—'}</td><td><code>${UI.esc(shortAddress(item.address))}</code>${item.recoveredFlag ? '<span class="dashboard-chip recovered">회수</span>' : ''}</td><td class="num">${won(item.balance)}</td><td class="num">${won(item.sent)}</td><td class="num">${won(item.toppedUp)}</td><td class="time" title="${UI.esc(exactTime(time))}">${UI.esc(usedAt(time))}</td></tr>`;
+        return `<tr data-wallet="${item.address}" tabindex="0" role="button"><td class="num">${item.isOperator ? '<span class="dashboard-chip operator">운영자</span>' : item.isStore ? '<span class="dashboard-chip store">가게</span>' : item.number ?? '—'}</td><td>${label(item.address)}${item.recoveredFlag ? '<span class="dashboard-chip recovered">회수</span>' : ''}</td><td class="num">${won(item.balance)}</td><td class="num">${won(item.sent)}</td><td class="num">${won(item.toppedUp)}</td><td class="time" title="${UI.esc(exactTime(time))}">${UI.esc(usedAt(time))}</td></tr>`;
       }).join('');
       write('dashboardWallets', wallets.length
         ? `<table class="dashboard-table"><thead><tr>${head('#', 'number', true)}<th>지갑 주소</th>${head('잔액', 'balance')}${head('송금', 'sent')}${head('충전', 'toppedUp')}${head('최근 사용', 'recent')}</tr></thead><tbody>${rows}</tbody></table>`
@@ -198,7 +204,7 @@
         // Operator wallets read as "운영자 d6a8" (first four hex digits); other wallets keep the short address.
         const party = address => summary.operators.includes(address)
           ? `<button type="button" class="dashboard-operator" data-wallet="${UI.esc(address)}" title="${UI.esc(address)}">운영자<code>${UI.esc(address.slice(2, 6))}</code></button>`
-          : `<span><code>${UI.esc(shortAddress(address))}</code>${isStore(address) ? '<em>가게</em>' : ''}</span>`;
+          : `<span>${label(address)}${isStore(address) ? '<em>가게</em>' : ''}</span>`;
         return `<div class="dashboard-transfer"><time title="${UI.esc(exactTime(time))}">${UI.esc(relativeTime(time, now()))}</time><span class="dashboard-chip ${topup ? 'type-topup' : 'type-payment'}">${topup ? '충전' : '송금'}</span><div class="dashboard-parties">${party(item.from)}<i>→</i>${party(item.to)}</div><strong>${won(item.value)}</strong></div>`;
       }).join('') : '<p class="dashboard-empty">아직 거래가 없어요.</p>');
       renderDialog();
@@ -206,7 +212,9 @@
     function renderDialog() {
       const dialog = node('dashboardDialog');
       if (!dialog) return;
-      const head = (title, chip = '') => `<div class="dashboard-dialog-head"><strong>${title}</strong>${chip}<button type="button" class="dashboard-dialog-close" data-dialog="close" aria-label="닫기">×</button></div><div class="dashboard-dialog-address"><code>${UI.esc(selected)}</code><button type="button" class="dashboard-copy" data-dialog="copy" aria-label="주소 복사">복사</button></div>`;
+      // Keep the popup still while its name field is being typed in; it re-renders once the name is saved.
+      if (dialog.open && doc.activeElement?.matches?.('[data-dialog-name]')) return;
+      const head = (title, chip = '') => `<div class="dashboard-dialog-head"><strong>${title}</strong><input class="dashboard-name" data-dialog-name type="text" maxlength="${NAME_LIMIT}" value="${UI.esc(names[selected] || '')}" placeholder="이름" autocomplete="off" aria-label="지갑 이름">${chip}<button type="button" class="dashboard-dialog-close" data-dialog="close" aria-label="닫기">×</button></div><div class="dashboard-dialog-address"><code>${UI.esc(selected)}</code><button type="button" class="dashboard-copy" data-dialog="copy" aria-label="주소 복사">복사</button></div>`;
       const item = selected && summary?.wallets.find(entry => entry.address === selected);
       if (!item) { if (dialog.open) dialog.close?.(); write('dashboardDialog', ''); return; }
       const time = timeOf(item.lastBlock);
@@ -277,6 +285,13 @@
       summarize(); render();
     }
     // A wallet marked as operator leaves the numbered table; its transfers count as 충전/회수 from then on.
+    function rename(value) {
+      if (!selected) return;
+      const name = String(value || '').trim().slice(0, NAME_LIMIT);
+      if (name) names[selected] = name; else delete names[selected];
+      try { storage?.setItem(NAMES_KEY, JSON.stringify(names)); } catch {}
+      render();
+    }
     function toggleOperator() {
       if (!selected) return;
       if (operators.includes(selected)) operators = operators.filter(item => item !== selected);
@@ -322,6 +337,8 @@
       node('dashboardWallets')?.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { const row = event.target.closest?.('[data-wallet]'); if (row) { event.preventDefault?.(); open(row.dataset.wallet); } } });
       const dialog = node('dashboardDialog');
       dialog?.addEventListener('click', event => { if (event.target === dialog) close(); else onDialogClick(event); });
+      dialog?.addEventListener('change', event => { if (event.target.matches?.('[data-dialog-name]')) rename(event.target.value); });
+      dialog?.addEventListener('keydown', event => { if (event.key === 'Enter' && event.target.matches?.('[data-dialog-name]')) { event.preventDefault?.(); event.target.blur?.(); } });
       dialog?.addEventListener('cancel', event => { event.preventDefault?.(); close(); });
       if (!preview) {
         timer = root.setInterval?.(() => { if (doc.visibilityState === 'visible') void refresh(); }, interval);
@@ -332,8 +349,8 @@
       return instance;
     }
     function stop() { stopped = true; if (timer != null) root.clearInterval?.(timer); timer = null; }
-    const instance = { start, stop, refresh, open, close, snapshot:() => ({ summary, cursor, error, loading, updatedAt, stores:[...stores], operators:[...operators], sort:{ ...sort }, selected, timestamps:new Map(timestamps) }) };
+    const instance = { start, stop, refresh, open, close, snapshot:() => ({ summary, cursor, error, loading, updatedAt, stores:[...stores], operators:[...operators], names:{ ...names }, sort:{ ...sort }, selected, timestamps:new Map(timestamps) }) };
     return instance;
   }
-  return { aggregate, mergeLogs, sortWallets, relativeTime, usedAt, shortAddress, createRpc, sampleData, create, REFRESH_INTERVAL, STORES_KEY, OPERATORS_KEY };
+  return { aggregate, mergeLogs, sortWallets, relativeTime, usedAt, shortAddress, createRpc, sampleData, create, REFRESH_INTERVAL, STORES_KEY, OPERATORS_KEY, NAMES_KEY };
 });

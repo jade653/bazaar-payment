@@ -37,7 +37,7 @@ function page({provider = new Provider(), local = storage(), session = storage()
   const diagnostics=Wallet.createDiagnostics({storage:session});
   const window={ document, localStorage:local,sessionStorage:session,
     BazaarWallet:{...Wallet,TOKEN:TEST_TOKEN,diagnosticsFor:()=>diagnostics,discover:()=>({getProvider:async()=>provider,dispose(){}}),
-      createWallet(options){controller=Wallet.createWallet({...options,token:TEST_TOKEN,diagnostics});return controller;}},
+      createWallet(options){controller=Wallet.createWallet({...options,token:TEST_TOKEN,diagnostics,promptSettleMs:0});return controller;}},
     BazaarUI:UI,BazaarTransfer:{...Transfer,createSender:options=>Transfer.createSender({...options,maxPolls:1,readTimeout:20})},
     BazaarHistory:{recordSent(){}},BazaarScanner:{create(){return {start(){},stop(){},dispose(){}};}},
     fetch:fetchImpl || (async()=>{throw new Error('Unexpected HTTP');}),addEventListener(type,fn){events[type]=fn;},removeEventListener(){}};

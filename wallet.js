@@ -38,6 +38,9 @@
   const ALLOWED = new Set(['eth_accounts', 'eth_requestAccounts', 'eth_chainId',
     'eth_getBalance', 'eth_call', 'wallet_switchEthereumChain', 'wallet_addEthereumChain']);
   const READS = ['eth_accounts', 'eth_chainId', 'eth_getBalance', 'eth_call'];
+  const PROMPT_STAGE = /^(?:(?:eth_requestAccounts|wallet_switchEthereumChain|wallet_addEthereumChain):request|prompt:.+)$/;
+  const PENDING_TEXT = 'MetaMask에 처리되지 않은 요청이 남아 있어요. 앱 상단의 알림을 확인하고, 보이는 창이 없으면 MetaMask 앱을 완전히 종료한 뒤 다시 열어주세요.';
+  const SLOW_PROMPT_TEXT = 'MetaMask 창이 보이지 않으면 MetaMask 앱을 완전히 종료한 뒤 다시 열어주세요.';
   const addressOK = value => typeof value === 'string' && /^0x[0-9a-f]{40}$/i.test(value);
   const hexOK = value => typeof value === 'string' && /^0x[0-9a-f]+$/i.test(value);
   const balanceOfData = (token, account) => token.selectors.balanceOf + account.slice(2).toLowerCase().padStart(64, '0');
@@ -129,6 +132,7 @@
       const entry = { time:clean(item.time || now()), stage:clean(item.stage), chainId:null };
       if (typeof item.chainId === 'string' && /^0x[0-9a-f]+$/i.test(item.chainId)) entry.chainId = item.chainId;
       if (typeof item.hash === 'string' && /^0x[0-9a-f]{64}$/i.test(item.hash)) entry.hash = item.hash;
+      if (item.visibility === 'visible' || item.visibility === 'hidden') entry.visibility = item.visibility;
       if (item.error) {
         const queue = [item.error], seen = new Set(); entry.errors = [];
         for (let i = 0; i < queue.length && i < 12; i++) {
@@ -155,6 +159,9 @@
       }
       return rows.slice(-30);
     };
+    // Requests that open a MetaMask sheet never fail when the sheet is lost, so they are listed apart.
+    const prompts = () => records.filter(record => PROMPT_STAGE.test(record.stage))
+      .slice(-5).map(({ time, stage, visibility }) => ({ time, stage, ...(visibility ? { visibility } : {}) }));
     return {
       record(item) {
         records.push(sanitize(item)); records = records.slice(-200);
@@ -162,7 +169,7 @@
         notify();
       },
       snapshot:() => JSON.parse(JSON.stringify(records)),
-      text:() => JSON.stringify({ version:2, device:clean(device), expectedChainId:NETWORK.chainId, failures:failures() }, null, 2),
+      text:() => JSON.stringify({ version:2, device:clean(device), expectedChainId:NETWORK.chainId, prompts:prompts(), failures:failures() }, null, 2),
       subscribe(fn) { notify = fn; }
     };
   }
@@ -191,21 +198,27 @@
 
   // token:null reads only the native balance (setup page); otherwise balanceWei is wMST units and gasWei native MST.
   function createWallet({ getProvider, onState = () => {}, network = NETWORK, token = TOKEN, readTimeout = 12000,
-    readBalanceFromRpc = null, lifecycle = null, diagnostics = lifecycle ? diagnosticsFor(lifecycle) : null }) {
+    readBalanceFromRpc = null, lifecycle = null, diagnostics = lifecycle ? diagnosticsFor(lifecycle) : null,
+    promptSettleMs = 800, promptHintMs = 15000, now = () => Date.now() }) {
     let provider, activeTask, generation = 0, disposed = false, promptHold = '', actualChainId = null;
     let eventTimer, syncAgain = false, autoPaused = false;
+    // MetaMask Mobile can queue a sheet it never shows when one is requested while the in-app
+    // browser is hidden, still loading, or just handed off; later requests then fail with -32002.
+    // Requests that open a sheet therefore wait until the page has been visible for promptSettleMs.
+    const doc = lifecycle?.document;
+    let visibleSince = doc?.visibilityState === 'hidden' ? null : now();
     let state = { status:'idle', account:null, balanceWei:null, gasWei:null };
     let storage; try { storage = lifecycle?.sessionStorage; const saved = storage?.getItem('bazaar-wallet-prompt-hold');
       if (['cancelled','pending','error','needs-network'].includes(saved)) promptHold = saved; } catch {}
     function hold(value) { promptHold = value; try { storage?.setItem('bazaar-wallet-prompt-hold', value); } catch {} }
-    const log = (stage, error) => diagnostics?.record({ stage, chainId:actualChainId, error });
+    const log = (stage, error) => diagnostics?.record({ stage, chainId:actualChainId, error, visibility:doc?.visibilityState });
     const emit = (status, data = {}) => {
       if (disposed) return;
       state = { status, account:null, balanceWei:null, gasWei:null, chainId:actualChainId, ...data };
       const panel = diagnostics?.panel, label = panel?.querySelector('[data-wallet-status]');
       if (label) label.textContent = status === 'ready' ? 'Mustree 연결됨'
         : status === 'cancelled' ? '연결을 취소했어요. 준비되면 지갑 연결 다시 시도를 눌러주세요.'
-        : status === 'pending' ? 'MetaMask의 기존 승인 요청을 확인한 뒤 지갑 연결 다시 시도를 눌러주세요.'
+        : status === 'pending' ? PENDING_TEXT
         : status === 'error' || status === 'needs-network' ? '연결을 완료하지 못했어요. 지갑 연결 다시 시도를 눌러주세요.'
         : status === 'unavailable' ? 'MetaMask 앱에서 열어주세요.' : '지갑 연결 상태를 확인하고 있어요.';
       if (panel && ['cancelled','pending','error','needs-network'].includes(status)) panel.open = true;
@@ -225,6 +238,35 @@
       } catch (error) { log(method + ':failure', error); throw error; }
       finally { clearTimeout(timer); }
     }
+    async function promptWindow(revision) {
+      if (!doc) return;
+      for (;;) {
+        assertCurrent(revision);
+        // A hidden page cannot show a sheet; the visibilitychange resume starts a fresh check.
+        if (doc.visibilityState === 'hidden') { log('prompt:deferred-hidden'); throw failure('PAGE_HIDDEN'); }
+        if (doc.readyState && doc.readyState !== 'complete') {
+          await new Promise(resolve => lifecycle.addEventListener('load', resolve, { once:true })); continue;
+        }
+        visibleSince ??= now();
+        const left = visibleSince + promptSettleMs - now();
+        if (left <= 0) return;
+        await new Promise(resolve => setTimeout(resolve, left));
+      }
+    }
+    function slowPrompt(method) {
+      if (disposed) return;
+      log('prompt:slow:' + method);
+      const panel = diagnostics?.panel, label = panel?.querySelector('[data-wallet-status]');
+      if (label) label.textContent = SLOW_PROMPT_TEXT;
+      if (panel) panel.open = true;
+    }
+    async function prompt(revision, method, params) {
+      await promptWindow(revision);
+      const timer = promptHintMs > 0 ? setTimeout(() => slowPrompt(method), promptHintMs) : null;
+      try { return await call(method, params); } finally { clearTimeout(timer); }
+    }
+    function trackVisibility() { visibleSince = doc?.visibilityState === 'hidden' ? null : (visibleSince ?? now()); }
+    function trackPageshow(event) { if (event.persisted) visibleSince = doc?.visibilityState === 'hidden' ? null : now(); }
     function scheduleSync() {
       if (disposed) return;
       if (activeTask) { syncAgain = true; return; }
@@ -276,7 +318,7 @@
       hold(''); emit('ready', { account:accounts[0], balanceWei:token ? BigInt(raw.balanceWei).toString() : null, gasWei:BigInt(raw.gasWei).toString() });
     }
     function report(error, revision) {
-      if (disposed || generation !== revision || error?.code === 'STALE') return;
+      if (disposed || generation !== revision || error?.code === 'STALE' || error?.code === 'PAGE_HIDDEN') return;
       log('wallet:failure', error);
       const code = errorCode(error);
       if (code === -32002) { hold('pending'); emit('pending'); }
@@ -294,19 +336,21 @@
         let [accounts, chain] = await Promise.all([call('eth_accounts'), call('eth_chainId')]); assertCurrent(revision);
         if ((!addressOK(accounts?.[0]) || !sameChain(chain, network.chainId)) && (promptHold || autoPaused) && !explicit) { emit(promptHold || 'pending'); return; }
         if (!addressOK(accounts?.[0])) {
-          emit('connecting'); accounts = await call('eth_requestAccounts'); assertCurrent(revision);
+          await promptWindow(revision);
+          emit('connecting'); accounts = await prompt(revision, 'eth_requestAccounts'); assertCurrent(revision);
           if (!addressOK(accounts?.[0])) throw failure('NO_ACCOUNT');
           chain = await call('eth_chainId'); assertCurrent(revision);
         }
         if (!sameChain(chain, network.chainId)) {
+          await promptWindow(revision);
           emit('switching');
-          try { await call('wallet_switchEthereumChain', [{ chainId:network.chainId }]); }
+          try { await prompt(revision, 'wallet_switchEthereumChain', [{ chainId:network.chainId }]); }
           catch (error) {
             assertCurrent(revision); if (errorCode(error) !== 4902) throw error;
             emit('adding');
-            await call('wallet_addEthereumChain', [{ ...network, nativeCurrency:{ ...network.nativeCurrency }, rpcUrls:[...network.rpcUrls] }]);
+            await prompt(revision, 'wallet_addEthereumChain', [{ ...network, nativeCurrency:{ ...network.nativeCurrency }, rpcUrls:[...network.rpcUrls] }]);
             assertCurrent(revision); chain = await call('eth_chainId'); assertCurrent(revision);
-            if (!sameChain(chain, network.chainId)) { emit('switching'); await call('wallet_switchEthereumChain', [{ chainId:network.chainId }]); }
+            if (!sameChain(chain, network.chainId)) { emit('switching'); await prompt(revision, 'wallet_switchEthereumChain', [{ chainId:network.chainId }]); }
           }
           assertCurrent(revision);
         }
@@ -330,6 +374,7 @@
     const resume = () => { if (lifecycle?.document?.visibilityState !== 'hidden') void restore(); };
     const pageshow = event => { if (event.persisted) resume(); };
     const retry = () => { void setup(); };
+    lifecycle?.addEventListener('pageshow', trackPageshow); doc?.addEventListener('visibilitychange', trackVisibility);
     lifecycle?.addEventListener('focus', resume); lifecycle?.addEventListener('pageshow', pageshow);
     lifecycle?.document?.addEventListener('visibilitychange', resume);
     diagnostics?.panel?.querySelector('[data-wallet-retry]')?.addEventListener('click', retry);
@@ -341,6 +386,7 @@
         disposed = true; generation++; clearTimeout(eventTimer); unbind();
         lifecycle?.removeEventListener?.('focus', resume); lifecycle?.removeEventListener?.('pageshow', pageshow);
         lifecycle?.document?.removeEventListener?.('visibilitychange', resume);
+        lifecycle?.removeEventListener?.('pageshow', trackPageshow); doc?.removeEventListener?.('visibilitychange', trackVisibility);
         diagnostics?.panel?.querySelector('[data-wallet-retry]')?.removeEventListener?.('click', retry);
       }
     };

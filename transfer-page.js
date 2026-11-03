@@ -44,7 +44,7 @@
     } else {
       const invalid = ['idle','needs-network','disconnected','unavailable'].includes(snapshot.status);
       const message = snapshot.status === 'cancelled' ? '연결이 취소됐어요. 지갑 연결 다시 시도를 눌러주세요.'
-        : snapshot.status === 'pending' ? 'MetaMask의 기존 승인 요청을 확인한 뒤 지갑 연결 다시 시도를 눌러주세요.'
+        : snapshot.status === 'pending' ? 'MetaMask에 처리되지 않은 요청이 남아 있어요. 보이는 창이 없으면 MetaMask 앱을 완전히 종료한 뒤 다시 열고 지갑 연결 다시 시도를 눌러주세요.'
         : ['connecting','adding','switching','pending'].includes(snapshot.status) ? 'MetaMask에서 확인을 눌러주세요.'
         : snapshot.status === 'querying' ? '잔액을 확인하고 있어요.'
         : invalid ? '지갑을 연결해 주세요.' : '지갑을 연결하지 못했어요.';

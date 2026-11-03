@@ -46,7 +46,7 @@ function liveHarness({ query = async () => ({items:[],lastScannedBlock:0,balance
     discover() { return { getProvider:async()=>provider, dispose() {} }; },
     createWallet(options) {
       walletState = options.onState;
-      controller = provider ? require('../wallet.js').createWallet({ ...options, token:TEST_TOKEN }) : { setup() {}, refresh() {}, restore() {}, dispose() {} };
+      controller = provider ? require('../wallet.js').createWallet({ ...options, token:TEST_TOKEN, promptSettleMs:0 }) : { setup() {}, refresh() {}, restore() {}, dispose() {} };
       return controller;
     },
   };

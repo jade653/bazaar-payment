@@ -48,7 +48,7 @@ function page({ provider = mockProvider(), preview = false, noProvider = false, 
   const diagnostics = Wallet.createDiagnostics({ storage:session });
   const crypto = { getRandomValues(array) { array.fill(0xab); return array; } };
   const window = { document, sessionStorage:session, localStorage:storage(), crypto, navigator:{ clipboard:{ async writeText(value) { copied = value; } } },
-    BazaarWallet:{ ...Wallet, diagnosticsFor:() => diagnostics, discover:() => ({ getProvider:async () => noProvider ? null : provider, dispose() {} }), createWallet(options) { controller = Wallet.createWallet({ ...options, diagnostics }); return controller; } },
+    BazaarWallet:{ ...Wallet, diagnosticsFor:() => diagnostics, discover:() => ({ getProvider:async () => noProvider ? null : provider, dispose() {} }), createWallet(options) { controller = Wallet.createWallet({ ...options, diagnostics, promptSettleMs:0 }); return controller; } },
     BazaarTransfer:Transfer, BazaarUI:UI, WMST_ARTIFACT:artifact,
     fetch:async () => { throw new Error('Unexpected HTTP'); }, addEventListener(type, fn) { events[type] = fn; }, removeEventListener() {} };
   vm.runInNewContext(fs.readFileSync(require.resolve('../setup.js'), 'utf8'), { window, document, URL, URLSearchParams, crypto, navigator:window.navigator, setTimeout, clearTimeout, Promise, console,

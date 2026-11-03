@@ -73,7 +73,7 @@
   // Error texts identify the failure for testing; the top-up (operator) variants may name chain concepts.
   function errorText(code, kind = 'payment') {
     const operator = kind === 'topup';
-    return ({ 4001:'송금이 취소됐어요. 준비되면 다시 시도해 주세요.', '-32002':'MetaMask에 대기 중인 승인 요청을 확인해 주세요.', 4900:'MetaMask 연결이 끊겼어요. 지갑 연결 다시 시도를 눌러주세요.', 4901:'현재 네트워크에 연결하지 못했어요. 지갑 연결 다시 시도를 눌러주세요.', READ_TIMEOUT:'지갑 응답이 지연되고 있어요. 진단 기록을 확인해 주세요.', INVALID_RECEIPT:'거래 결과를 확인하지 못했어요. 기존 거래 결과를 다시 확인해 주세요.', INVALID_ADDRESS:'받는 지갑 주소를 확인해 주세요.', INVALID_AMOUNT:'송금할 금액을 확인해 주세요.', NO_ACCOUNT:'지갑을 연결해 주세요.', ACCOUNT_CHANGED:'지갑 계정이 바뀌었어요. 다시 확인해 주세요.', WRONG_CHAIN:'Mustree 네트워크로 다시 연결해 주세요.',
+    return ({ 4001:'송금이 취소됐어요. 준비되면 다시 시도해 주세요.', '-32002':'MetaMask에 처리되지 않은 요청이 남아 있어요. 보이는 창이 없으면 MetaMask 앱을 완전히 종료한 뒤 다시 열어주세요.', 4900:'MetaMask 연결이 끊겼어요. 지갑 연결 다시 시도를 눌러주세요.', 4901:'현재 네트워크에 연결하지 못했어요. 지갑 연결 다시 시도를 눌러주세요.', READ_TIMEOUT:'지갑 응답이 지연되고 있어요. 진단 기록을 확인해 주세요.', INVALID_RECEIPT:'거래 결과를 확인하지 못했어요. 기존 거래 결과를 다시 확인해 주세요.', INVALID_ADDRESS:'받는 지갑 주소를 확인해 주세요.', INVALID_AMOUNT:'송금할 금액을 확인해 주세요.', NO_ACCOUNT:'지갑을 연결해 주세요.', ACCOUNT_CHANGED:'지갑 계정이 바뀌었어요. 다시 확인해 주세요.', WRONG_CHAIN:'Mustree 네트워크로 다시 연결해 주세요.',
       INSUFFICIENT_BALANCE:operator ? '충전 지갑의 wMST 잔액이 부족해요. 운영 지갑에서 wMST를 보충해 주세요.' : '잔액이 부족해요.',
       RPC_UNAVAILABLE:'지갑 통신이 불안정해요. 와이파이·모바일 데이터를 바꾼 뒤 다시 시도해 주세요.',
       INSUFFICIENT_GAS:operator ? '충전 지갑의 수수료용 MST가 부족해요. 운영 지갑에서 MST를 보충해 주세요.' : '수수료 잔액이 부족해요. 직원에게 충전을 요청해 주세요.',

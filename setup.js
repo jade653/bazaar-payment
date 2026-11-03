@@ -42,7 +42,7 @@
   }
   function describe(error) {
     const code = Wallet.errorCode?.(error) ?? error?.code;
-    const known = { 4001:'요청이 취소됐어요. 준비되면 다시 눌러주세요.', '-32002':'MetaMask에 대기 중인 요청을 먼저 처리해 주세요.', READ_TIMEOUT:'지갑 응답이 지연되고 있어요. 진단 기록을 확인해 주세요.',
+    const known = { 4001:'요청이 취소됐어요. 준비되면 다시 눌러주세요.', '-32002':'MetaMask에 처리되지 않은 요청이 남아 있어요. 보이는 창이 없으면 MetaMask 앱을 완전히 종료한 뒤 다시 열어주세요.', READ_TIMEOUT:'지갑 응답이 지연되고 있어요. 진단 기록을 확인해 주세요.',
       INVALID_TX_HASH:'거래 접수 결과를 받지 못했어요.', TRANSACTION_FAILED:'거래가 체인에서 실패했어요. 잔액과 주소를 확인해 주세요.', RECEIPT_TIMEOUT:'거래 확인이 지연되고 있어요. 잠시 후 다시 시도해 주세요.',
       INVALID_RECEIPT:'거래 결과를 읽지 못했어요.', WRONG_CHAIN:'Mustree 네트워크로 다시 연결해 주세요.', ACCOUNT_CHANGED:'지갑 계정이 바뀌었어요. 다시 확인해 주세요.',
       INVALID_SUPPLY:'발행량은 1 이상의 정수로 입력해 주세요.', INVALID_TOKEN:'측정할 wMST 컨트랙트 주소를 확인해 주세요.', INVALID_TEST_WALLET:'테스트 수신 지갑 주소를 확인해 주세요.',
@@ -91,7 +91,7 @@
   function onWallet(snapshot) {
     if (snapshot.status === 'ready') { set({ walletBlocked:false, needsApp:false, account:snapshot.account, gasWei:snapshot.gasWei, walletMessage:'' }); return; }
     const message = snapshot.status === 'cancelled' ? '연결이 취소됐어요. 지갑 연결을 다시 눌러주세요.'
-      : snapshot.status === 'pending' ? 'MetaMask의 기존 승인 요청을 확인한 뒤 지갑 연결을 눌러주세요.'
+      : snapshot.status === 'pending' ? 'MetaMask에 처리되지 않은 요청이 남아 있어요. 보이는 창이 없으면 MetaMask 앱을 완전히 종료한 뒤 다시 열고 지갑 연결을 눌러주세요.'
       : ['connecting','adding','switching'].includes(snapshot.status) ? 'MetaMask에서 확인을 눌러주세요.'
       : snapshot.status === 'querying' ? '잔액을 확인하고 있어요.'
       : snapshot.status === 'unavailable' ? 'MetaMask 앱에서 열어주세요.' : '운영 지갑을 연결해 주세요.';

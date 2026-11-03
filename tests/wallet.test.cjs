@@ -177,3 +177,55 @@ test('wallet request methods never include signing or sending a transaction',asy
   const p=new Provider({accounts:[],chain:'0x1',added:false}),f=fixture(p);t.after(()=>f.wallet.dispose());await f.wallet.setup();await f.wallet.refresh();
   assert.ok(f.methods().every(method=>['eth_accounts','eth_requestAccounts','eth_chainId','eth_getBalance','eth_call','wallet_switchEthereumChain','wallet_addEthereumChain'].includes(method)));
 });
+function pageLifecycle({visibilityState='visible',readyState}={}){
+  const listeners={};const on=(key,fn)=>(listeners[key]||=[]).push(fn);const fire=(key,event)=>[...(listeners[key]||[])].forEach(fn=>fn(event));
+  const document={visibilityState,readyState,addEventListener:(type,fn)=>on('document:'+type,fn),removeEventListener(){}};
+  return{document,addEventListener:(type,fn)=>on(type,fn),removeEventListener(){},
+    show(){document.visibilityState='visible';fire('document:visibilitychange');},hide(){document.visibilityState='hidden';fire('document:visibilitychange');},
+    load(){document.readyState='complete';fire('load');}};
+}
+const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+const prompted=p=>p.calls.some(c=>['eth_requestAccounts','wallet_switchEthereumChain','wallet_addEthereumChain'].includes(c.method));
+test('the first connection request on page load waits until the page has been visible for the settle time',async t=>{
+  const p=new Provider({accounts:[]}),f=fixture(p,{lifecycle:pageLifecycle(),promptSettleMs:80});t.after(()=>f.wallet.dispose());
+  const run=f.wallet.restore();await pause(30);
+  assert.equal(prompted(p),false);assert.ok(p.calls.some(c=>c.method==='eth_accounts'),'reads still run at once');
+  await run;assert.equal(f.wallet.getSnapshot().status,'ready');assert.ok(prompted(p));
+});
+test('a hidden page sends no sheet request and connects after it becomes visible and settles',async t=>{
+  const life=pageLifecycle({visibilityState:'hidden'}),p=new Provider({accounts:[],chain:'0x1',added:false});
+  const f=fixture(p,{lifecycle:life,promptSettleMs:30});t.after(()=>f.wallet.dispose());
+  await f.wallet.restore();
+  assert.equal(prompted(p),false);assert.notEqual(f.wallet.getSnapshot().status,'error');
+  assert.ok(f.wallet.diagnostics.snapshot().some(r=>r.stage==='prompt:deferred-hidden'));
+  life.show();await pause(10);assert.equal(prompted(p),false,'still settling');
+  await pause(120);
+  assert.equal(f.wallet.getSnapshot().status,'ready');assert.equal(p.chain,NETWORK.chainId);
+  assert.deepEqual(p.calls.filter(c=>c.method!=='eth_accounts'&&c.method!=='eth_chainId'&&c.method!=='eth_getBalance'&&c.method!=='eth_call').map(c=>c.method),
+    ['eth_requestAccounts','wallet_switchEthereumChain','wallet_addEthereumChain','wallet_switchEthereumChain']);
+});
+test('hiding the page during the settle time cancels the request until it is visible again',async t=>{
+  const life=pageLifecycle(),p=new Provider({accounts:[]}),f=fixture(p,{lifecycle:life,promptSettleMs:60});t.after(()=>f.wallet.dispose());
+  void f.wallet.restore();await pause(20);life.hide();await pause(80);
+  assert.equal(prompted(p),false);
+  life.show();await pause(20);assert.equal(prompted(p),false,'settle restarts on return');
+  await pause(100);assert.equal(f.wallet.getSnapshot().status,'ready');
+});
+test('a page that is still loading waits for the load event before a sheet request',async t=>{
+  const life=pageLifecycle({readyState:'loading'}),p=new Provider({accounts:[]}),f=fixture(p,{lifecycle:life,promptSettleMs:0});t.after(()=>f.wallet.dispose());
+  const run=f.wallet.restore();await pause(30);assert.equal(prompted(p),false);
+  life.load();await run;assert.equal(f.wallet.getSnapshot().status,'ready');
+});
+test('a connection sheet with no answer logs a slow prompt and the copied record lists the request',async t=>{
+  const p=new Provider({accounts:[]});p.hooks.eth_requestAccounts=()=>new Promise(()=>{});
+  const f=fixture(p,{lifecycle:pageLifecycle(),promptSettleMs:0,promptHintMs:20});t.after(()=>f.wallet.dispose());
+  void f.wallet.restore();await pause(60);
+  assert.ok(f.wallet.diagnostics.snapshot().some(r=>r.stage==='prompt:slow:eth_requestAccounts'));
+  const out=JSON.parse(f.wallet.diagnostics.text());
+  assert.deepEqual(out.prompts.map(r=>[r.stage,r.visibility]),[['eth_requestAccounts:request','visible'],['prompt:slow:eth_requestAccounts','visible']]);
+  assert.deepEqual(out.failures,[]);
+});
+test('without a page lifecycle sheet requests are not delayed',async t=>{
+  const p=new Provider({accounts:[]}),f=fixture(p,{promptSettleMs:10000});t.after(()=>f.wallet.dispose());
+  await f.wallet.setup();assert.equal(f.wallet.getSnapshot().status,'ready');
+});

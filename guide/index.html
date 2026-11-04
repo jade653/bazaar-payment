@@ -26,7 +26,7 @@ code{font-family:ui-monospace,Consolas,monospace;background:#edf2eb;padding:1px 
 <a href="#section-4">3. 충전하기: 손님 받기 QR (손님 → 충전 직원)</a>
 <a href="#section-5">4. MST 충전: 직원 화면 (운영자)</a>
 <a href="#section-6">5. 대시보드: 충전·송금·회수 확인 (운영자)</a>
-<a href="#section-7">6. 가게 운영: 결제받을 QR과 가게 잔액 (가게 담당자)</a>
+<a href="#section-7">6. 송금·받기: 결제받을 QR과 가게 잔액 (가게 담당자)</a>
 <a href="#section-8">7. 가게 결제: QR 스캔과 송금 (손님)</a>
 <a href="#section-9">8. 일반 송금: 가게 지갑에서 보내기 (가게 담당자)</a>
 <a href="#section-10">현장에서 자주 묻는 상황</a>
@@ -36,7 +36,7 @@ code{font-family:ui-monospace,Consolas,monospace;background:#edf2eb;padding:1px 
 <a href="#section-4" onclick="this.closest('details').open=false">3. 충전하기: 손님 받기 QR (손님 → 충전 직원)</a>
 <a href="#section-5" onclick="this.closest('details').open=false">4. MST 충전: 직원 화면 (운영자)</a>
 <a href="#section-6" onclick="this.closest('details').open=false">5. 대시보드: 충전·송금·회수 확인 (운영자)</a>
-<a href="#section-7" onclick="this.closest('details').open=false">6. 가게 운영: 결제받을 QR과 가게 잔액 (가게 담당자)</a>
+<a href="#section-7" onclick="this.closest('details').open=false">6. 송금·받기: 결제받을 QR과 가게 잔액 (가게 담당자)</a>
 <a href="#section-8" onclick="this.closest('details').open=false">7. 가게 결제: QR 스캔과 송금 (손님)</a>
 <a href="#section-9" onclick="this.closest('details').open=false">8. 일반 송금: 가게 지갑에서 보내기 (가게 담당자)</a>
 <a href="#section-10" onclick="this.closest('details').open=false">현장에서 자주 묻는 상황</a>
@@ -48,7 +48,7 @@ code{font-family:ui-monospace,Consolas,monospace;background:#edf2eb;padding:1px 
 <p>운영자가 손님과 가게 담당자에게 설명할 때 쓰는 안내서입니다. 화면에 보이는 <strong>MST 1 = 1원 상당</strong>입니다. 송금·결제·충전은 실제 지갑의 승인과 완료 화면까지 확인해야 끝납니다.</p>
 <p>아래 캡처는 대부분 배포된 화면을 2026-11-02에 다시 촬영한 것입니다. 운영자 충전 입력 화면은 2026-10-30에 촬영했습니다. 지갑이 필요한 화면은 <code>?preview=1</code> 또는 화면 테스트 모드의 <strong>예시 주소·잔액</strong>을 사용했습니다. 미리보기 QR은 실제 송금에 사용할 수 없습니다.</p>
 <section class="guide-section" id="section-1"><h2>먼저 보는 전체 흐름</h2>
-<ol><li><strong>손님</strong>이 입장 QR을 스캔해 <a href="https://bazaar.mustree.kr/">시작 화면</a>을 엽니다.</li><li>MetaMask 설치·지갑 준비·연결을 마치면 <strong>내 지갑</strong>에서 잔액을 봅니다.</li><li>충전할 때는 손님의 <strong>충전하기 → 받기 QR</strong>을 직원에게 보여주고, 직원이 현금 또는 입금 금액을 확인한 뒤 <a href="https://bazaar.mustree.kr/operator.html">MST 충전</a>에서 보냅니다.</li><li>결제할 때는 가게 담당자가 <a href="https://bazaar.mustree.kr/store.html">가게 운영</a>의 <strong>받기 QR</strong>을 보여주고, 손님이 <strong>가게 결제하기</strong>에서 스캔해 금액을 보냅니다.</li><li>손님과 가게는 각각 <strong>내 지갑</strong> 또는 <strong>가게 운영</strong>에서 잔액과 최근 거래를 확인합니다.</li></ol>
+<ol><li><strong>손님</strong>이 입장 QR을 스캔해 <a href="https://bazaar.mustree.kr/">시작 화면</a>을 엽니다.</li><li>MetaMask 설치·지갑 준비·연결을 마치면 <strong>내 지갑</strong>에서 잔액을 봅니다.</li><li>충전할 때는 손님의 <strong>충전하기 → 받기 QR</strong>을 직원에게 보여주고, 직원이 현금 또는 입금 금액을 확인한 뒤 <a href="https://bazaar.mustree.kr/operator.html">MST 충전</a>에서 보냅니다.</li><li>결제할 때는 가게 담당자가 <a href="https://bazaar.mustree.kr/store.html">송금·받기</a>의 <strong>받기 QR</strong>을 보여주고, 손님이 <strong>가게 결제하기</strong>에서 스캔해 금액을 보냅니다.</li><li>손님과 가게는 각각 <strong>내 지갑</strong> 또는 <strong>송금·받기</strong>에서 잔액과 최근 거래를 확인합니다.</li></ol>
 <p class="guide-note"><strong>가장 쉬운 QR 사용법:</strong> 페이지 안의 <strong>QR 스캔하기</strong> 버튼을 누를 필요는 없습니다. 직원이 손님의 받기 QR을 휴대전화 <strong>기본 카메라</strong>로 찍으면 <strong>MST 충전</strong> 페이지가 열리고, 손님이 가게의 받기 QR을 기본 카메라로 찍으면 <strong>가게 결제</strong> 페이지가 열립니다. 받는 주소가 자동으로 채워지므로 주소와 금액을 확인한 뒤 진행하세요. 일반 브라우저에서 MetaMask로 이어가기 안내가 나오면 그 안내에 따라 앱에서 계속합니다.</p>
 </section>
 <section class="guide-section" id="section-2"><h2>1. 입장 QR → 시작 화면 (손님)</h2>
@@ -90,14 +90,14 @@ code{font-family:ui-monospace,Consolas,monospace;background:#edf2eb;padding:1px 
 <ol><li><strong>MST 충전</strong> 화면 오른쪽 위의 <strong>대시보드</strong>를 누릅니다. 운영 현황은 지갑 연결 없이 읽을 수 있습니다.</li><li>맨 위 카드에서 <strong>충전 합계</strong>, <strong>결제</strong>, <strong>지갑 수</strong>, <strong>회수 합계</strong>를 확인합니다. 여기서 ‘결제’는 지갑 간 송금 건수입니다.</li><li><strong>지갑</strong> 표에서 각 지갑의 잔액·송금·충전·최근 사용을 봅니다. 돋보기 버튼으로 주소를 검색하거나 표 머리글을 눌러 정렬합니다.</li><li>지갑 행을 누르면 전체 주소, 거래 수와 <strong>남은 수수료</strong> 등 상세 정보가 열립니다. <strong>복사</strong>로 주소를 복사하고, 필요한 지갑만 <strong>가게로 설정</strong> 또는 <strong>운영자로 설정</strong>합니다.</li><li>아래 <strong>최근 거래</strong>에서 보낸 지갑 → 받은 지갑과 금액을 확인합니다. 최신 정보가 필요하면 오른쪽 위 <strong>새로고침</strong>을 누릅니다.</li></ol>
 <p class="guide-note"><strong>운영자 확인:</strong> ‘회수’ 금액은 운영 지갑으로 들어온 송금입니다. 지갑 표의 <strong>회수 태그</strong>는 운영 지갑으로 보낸 뒤 그 지갑 잔액이 0이 됐을 때 붙고, 나중에 MST를 다시 받으면 사라집니다. 가게·운영자 지정은 지정한 휴대전화 브라우저에만 저장되므로 다른 기기에는 자동 반영되지 않습니다.</p>
 </section>
-<section class="guide-section" id="section-7"><h2>6. 가게 운영: 결제받을 QR과 가게 잔액 (가게 담당자)</h2>
-<p class="screen-link"><strong>화면:</strong> <a href="https://bazaar.mustree.kr/store.html">가게 운영</a> 또는 홈 화면의 <strong>송금·받기</strong></p>
-<p class="guide-note"><strong>진입:</strong> 홈 화면에서 <strong>송금·받기</strong>를 누릅니다.</p><div class="image-grid"><figure><a class="screenshot-frame" href="../assets/guide/02-wallet.png" target="_blank" rel="noopener"><img src="../assets/guide/02-wallet.png" alt="홈에서 누를 버튼: 송금·받기"><span class="button-highlight" aria-hidden="true" style="left:4.964%;top:60.000%;width:90.194%;height:6.815%"></span></a><figcaption>홈에서 누를 버튼: 송금·받기</figcaption></figure><figure><a class="screenshot-frame" href="../assets/guide/05-store.png" target="_blank" rel="noopener"><img src="../assets/guide/05-store.png" alt="가게 운영 미리보기: 받기 QR, 송금하기, 잔액과 최근 거래"><span class="button-highlight" aria-hidden="true" style="left:68.700%;top:1.938%;width:25.300%;height:3.562%"></span><span class="button-highlight" aria-hidden="true" style="left:79.900%;top:10.188%;width:13.200%;height:5.812%"></span><span class="button-highlight" aria-hidden="true" style="left:6.800%;top:64.750%;width:86.400%;height:7.000%"></span></a><figcaption>가게 운영 미리보기: 받기 QR, 송금하기, 잔액과 최근 거래</figcaption></figure></div>
+<section class="guide-section" id="section-7"><h2>6. 송금·받기: 결제받을 QR과 가게 잔액 (가게 담당자)</h2>
+<p class="screen-link"><strong>화면:</strong> <a href="https://bazaar.mustree.kr/store.html">송금·받기</a></p>
+<p class="guide-note"><strong>진입:</strong> 홈 화면에서 <strong>송금·받기</strong>를 누릅니다.</p><div class="image-grid"><figure><a class="screenshot-frame" href="../assets/guide/02-wallet.png" target="_blank" rel="noopener"><img src="../assets/guide/02-wallet.png" alt="홈에서 누를 버튼: 송금·받기"><span class="button-highlight" aria-hidden="true" style="left:4.964%;top:60.000%;width:90.194%;height:6.815%"></span></a><figcaption>홈에서 누를 버튼: 송금·받기</figcaption></figure><figure><a class="screenshot-frame" href="../assets/guide/05-store.png" target="_blank" rel="noopener"><img src="../assets/guide/05-store.png" alt="송금·받기 미리보기: 받기 QR, 송금하기, 잔액과 최근 거래"><span class="button-highlight" aria-hidden="true" style="left:68.700%;top:1.938%;width:25.300%;height:3.562%"></span><span class="button-highlight" aria-hidden="true" style="left:79.900%;top:10.188%;width:13.200%;height:5.812%"></span><span class="button-highlight" aria-hidden="true" style="left:6.800%;top:64.750%;width:86.400%;height:7.000%"></span></a><figcaption>송금·받기 미리보기: 받기 QR, 송금하기, 잔액과 최근 거래</figcaption></figure></div>
 
 
-<ol><li>가게용 MetaMask 지갑으로 <strong>가게 지갑 연결하기</strong>를 누릅니다.</li><li>원하는 경우 <strong>가게 이름 (선택)</strong>을 입력하고 <strong>저장</strong>을 누릅니다. 손님의 결제 화면에 이 이름이 표시됩니다.</li><li><strong>받기 QR</strong>을 손님에게 보여줍니다. 손님은 휴대전화 <strong>기본 카메라</strong>로 QR을 찍어 결제 페이지에 바로 들어갈 수 있고, 결제받을 가게 주소가 자동으로 채워집니다.</li><li>상단 <strong>잔액</strong>과 <strong>최근 거래</strong>에서 입금 여부를 확인합니다. 잔액은 화면이 열려 있는 동안 자동으로 확인되며, 상단 잔액을 눌러 직접 새로고침할 수도 있습니다.</li><li>가게 지갑에서 다른 지갑으로 보낼 때는 <strong>송금하기</strong>를 누릅니다.</li></ol>
+<ol><li>가게용 MetaMask 지갑으로 <strong>가게 지갑 연결하기</strong>를 누릅니다.</li><li>원하는 경우 <strong>내 이름 (선택)</strong>을 입력하고 <strong>저장</strong>을 누릅니다. 손님의 결제 화면에 이 이름이 표시됩니다.</li><li><strong>받기 QR</strong>을 손님에게 보여줍니다. 손님은 휴대전화 <strong>기본 카메라</strong>로 QR을 찍어 결제 페이지에 바로 들어갈 수 있고, 결제받을 가게 주소가 자동으로 채워집니다.</li><li>상단 <strong>잔액</strong>과 <strong>최근 거래</strong>에서 입금 여부를 확인합니다. 잔액은 화면이 열려 있는 동안 자동으로 확인되며, 상단 잔액을 눌러 직접 새로고침할 수도 있습니다.</li><li>가게 지갑에서 다른 지갑으로 보낼 때는 <strong>송금하기</strong>를 누릅니다.</li></ol>
 <p class="guide-note"><strong>운영자 안내 문구:</strong> “가게 QR을 손님에게 보여주세요. 손님이 결제 완료 화면을 본 다음, 가게 화면의 잔액이나 최근 거래에서 받은 금액을 확인해 주세요.”</p>
-<p class="guide-note"><strong>확인할 점:</strong> 가게 이름은 QR에 표시할 이름이며 결제 대상은 연결된 가게 지갑 주소입니다. 가게 지갑 계정을 바꾸면 QR 대상도 바뀌므로 영업 중에는 연결 계정을 확인하세요.</p>
+<p class="guide-note"><strong>확인할 점:</strong> 내 이름은 QR에 표시할 이름이며 결제 대상은 연결된 가게 지갑 주소입니다. 가게 지갑 계정을 바꾸면 QR 대상도 바뀌므로 영업 중에는 연결 계정을 확인하세요.</p>
 </section>
 <section class="guide-section" id="section-8"><h2>7. 가게 결제: QR 스캔과 송금 (손님)</h2>
 <p class="screen-link"><strong>화면:</strong> 내 지갑 → <strong>가게 결제하기</strong>, 또는 가게 QR을 휴대전화로 직접 찍어 열린 <a href="https://bazaar.mustree.kr/pay.html">가게 결제</a></p>
@@ -111,7 +111,7 @@ code{font-family:ui-monospace,Consolas,monospace;background:#edf2eb;padding:1px 
 <p class="guide-note"><strong>잔액 부족:</strong> 화면의 <strong>충전하기</strong>를 누르면 손님 받기 QR로 돌아갑니다. 수수료 잔액 부족 안내가 나오면 직원에게 충전을 요청합니다.</p>
 </section>
 <section class="guide-section" id="section-9"><h2>8. 일반 송금: 가게 지갑에서 보내기 (가게 담당자)</h2>
-<p class="screen-link"><strong>화면:</strong> 가게 운영 → <strong>송금하기</strong> (<code>/pay.html?mode=transfer</code>)</p>
+<p class="screen-link"><strong>화면:</strong> 송금·받기 → <strong>송금하기</strong> (<code>/pay.html?mode=transfer</code>)</p>
 <figure><a class="screenshot-frame" href="../assets/guide/08-transfer.png" target="_blank" rel="noopener"><img src="../assets/guide/08-transfer.png" alt="일반 송금 화면: 받는 지갑과 송금 금액"><span class="button-highlight" aria-hidden="true" style="left:10.400%;top:31.806%;width:38.800%;height:5.347%"></span><span class="button-highlight" aria-hidden="true" style="left:50.800%;top:31.806%;width:38.800%;height:5.347%"></span><span class="button-highlight" aria-hidden="true" style="left:6.800%;top:77.569%;width:86.400%;height:7.778%"></span></a><figcaption>일반 송금 화면: 받는 지갑과 송금 금액</figcaption></figure>
 <ol><li>받을 사람 또는 운영자의 QR을 스캔하거나 <strong>주소 직접 입력</strong>을 누릅니다.</li><li><strong>받는 지갑</strong> 주소를 확인하고 <strong>송금 금액</strong>을 MST 정수로 입력합니다.</li><li><strong>송금할 MST</strong>를 확인한 뒤 <strong>송금하기</strong>를 누르고 MetaMask에서 승인합니다.</li><li><strong>송금 완료</strong> 화면이 나오면 <strong>운영 화면으로</strong> 돌아가 잔액과 최근 거래를 확인합니다.</li></ol>
 <p class="guide-note"><strong>남은 금액 회수:</strong> 바자회 운영 방침에 따라 손님이 남은 MST를 현금으로 돌려받는 경우, 운영자가 알려 준 운영 지갑 주소로 손님 지갑에서 송금해야 합니다. 현재 손님 <strong>내 지갑</strong>에는 일반 송금 버튼이 없으므로, 운영자가 <a href="https://bazaar.mustree.kr/pay.html?mode=transfer">일반 송금 화면</a>을 안내하고 손님 지갑으로 열었는지 확인합니다. 운영 지갑의 수령과 금액을 확인한 뒤 현금을 지급합니다.</p>

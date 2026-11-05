@@ -162,8 +162,12 @@
     const loadList = name => { try { const saved = JSON.parse(storage?.getItem(name) || '[]'); return Array.isArray(saved) ? saved.filter(item => ADDRESS.test(item)).map(item => item.toLowerCase()) : []; } catch { return []; } };
     const saveList = (name, list) => { try { storage?.setItem(name, JSON.stringify(list)); } catch {} };
     let stores = loadList(STORES_KEY), operators = loadList(OPERATORS_KEY);
-    // Wallet names typed in the popup, also kept per browser: { address: name }.
-    let names = {}; try { const saved = JSON.parse(storage?.getItem(NAMES_KEY) || '{}'); for (const [address, name] of Object.entries(saved && typeof saved === 'object' ? saved : {})) if (ADDRESS.test(address) && typeof name === 'string' && name.trim()) names[address.toLowerCase()] = name.trim().slice(0, NAME_LIMIT); } catch {}
+    // Wallet names: those configured in wallet.js (TOKEN.walletNames) show on every device; names typed
+    // in the popup are kept per browser ({ address: name }) and take precedence over the configured ones.
+    const readNames = source => { const result = {}; for (const [address, name] of Object.entries(source && typeof source === 'object' ? source : {})) if (ADDRESS.test(address) && typeof name === 'string' && name.trim()) result[address.toLowerCase()] = name.trim().slice(0, NAME_LIMIT); return result; };
+    const configuredNames = readNames(token.walletNames);
+    let savedNames = {}; try { savedNames = readNames(JSON.parse(storage?.getItem(NAMES_KEY) || '{}')); } catch {}
+    let names = { ...configuredNames, ...savedNames };
     const rendered = {};
     const won = value => UI.won(value);
     const timeOf = block => timestamps.get(block);
@@ -288,8 +292,9 @@
     function rename(value) {
       if (!selected) return;
       const name = String(value || '').trim().slice(0, NAME_LIMIT);
-      if (name) names[selected] = name; else delete names[selected];
-      try { storage?.setItem(NAMES_KEY, JSON.stringify(names)); } catch {}
+      if (name) savedNames[selected] = name; else delete savedNames[selected];
+      names = { ...configuredNames, ...savedNames };
+      try { storage?.setItem(NAMES_KEY, JSON.stringify(savedNames)); } catch {}
       render();
     }
     function toggleOperator() {

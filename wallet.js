@@ -17,7 +17,16 @@
     deployBlock: 13341971,
     // Operator wallets besides the deployer (treasury): transfers from them count as top-ups,
     // transfers to them as recoveries on the dashboard. Add addresses here as operators join.
-    operatorWallets: Object.freeze([]),
+    operatorWallets: Object.freeze([
+      '0x92d0a3c5d5f086db2c94ded1cfac0e0c1798fb16',
+      '0x3a537b4770ab917a5daa231e55d7a0b0b6158ee3'
+    ]),
+    // Wallet names shown on every dashboard (up to 20 characters). A name typed in the
+    // dashboard popup overrides one here on that browser only.
+    walletNames: Object.freeze({
+      '0x92d0a3c5d5f086db2c94ded1cfac0e0c1798fb16': '대표님',
+      '0x3a537b4770ab917a5daa231e55d7a0b0b6158ee3': '성원님'
+    }),
     symbol: 'wMST', decimals: 0,
     selectors: Object.freeze({ transfer: '0xa9059cbb', transferWithGas: '0xf620de7c', balanceOf: '0x70a08231', totalSupply: '0x18160ddd' }),
     transferTopic: '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef',

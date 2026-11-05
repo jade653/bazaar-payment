@@ -277,3 +277,25 @@ test('a missing token address and an RPC failure show plain operator messages', 
   assert.match(failing.node('dashboardStatus').textContent, /현황을 불러오지 못했어요/);
   assert.doesNotMatch(failing.node('dashboardStatus').textContent, /RPC|eth_/);
 });
+
+test('wallet names configured in wallet.js show on every browser and a name typed in the popup overrides them locally', async () => {
+  const page = harness({ token:{ ...TOKEN, walletNames:{ [operator2.toUpperCase().replace('0X', '0x')]:'  대표님  ', [bob]:'', bad:'x' } } });
+  await flush();
+  assert.deepEqual({ ...page.dashboard().snapshot().names }, { [operator2]:'대표님' });
+  assert.match(page.node('dashboardWallets').innerHTML, /<span class="dashboard-label" title="대표님"><code>0xbbbbb<\/code><b>대표님<\/b><\/span>/);
+  page.click('dashboardWallets', { wallet:operator2 });
+  await flush();
+  assert.match(page.node('dashboardDialog').innerHTML, /value="대표님"/);
+  const nameField = value => ({ matches:selector => selector === '[data-dialog-name]', value });
+  page.events['dashboardDialog:change']({ target:nameField('사장님') });
+  assert.equal(page.dashboard().snapshot().names[operator2], '사장님');
+  assert.deepEqual(JSON.parse(page.saved.get(Dashboard.NAMES_KEY)), { [operator2]:'사장님' }, 'only names typed here are saved to the browser');
+  page.events['dashboardDialog:change']({ target:nameField('') });
+  assert.equal(page.dashboard().snapshot().names[operator2], '대표님', 'clearing the typed name falls back to the configured one');
+  assert.deepEqual(JSON.parse(page.saved.get(Dashboard.NAMES_KEY)), {});
+});
+
+test('wallet.js lists the operator wallets with their names', () => {
+  assert.deepEqual([...Wallet.TOKEN.operatorWallets], ['0x92d0a3c5d5f086db2c94ded1cfac0e0c1798fb16', '0x3a537b4770ab917a5daa231e55d7a0b0b6158ee3']);
+  assert.deepEqual({ ...Wallet.TOKEN.walletNames }, { '0x92d0a3c5d5f086db2c94ded1cfac0e0c1798fb16':'대표님', '0x3a537b4770ab917a5daa231e55d7a0b0b6158ee3':'성원님' });
+});

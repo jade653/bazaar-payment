@@ -28,7 +28,7 @@
   }
   const failure = code => Object.assign(new Error(code), { code });
   const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
-  const LOG_CHUNK = 50000;
+  const LOG_CHUNK = 50000, HEADER_BATCH = 100;
   // First visit covers one day of two-second blocks; later syncs continue from the cursor.
   const DEFAULT_WINDOW = 43200;
   const hexOK = value => typeof value === 'string' && /^0x[0-9a-f]+$/i.test(value);
@@ -97,7 +97,12 @@
     }
     const items = [...found.values()];
     const blocks = [...new Set(items.map(item => item.blockNumber))];
-    const headers = blocks.length ? await batch(blocks.map(number => ({method:'eth_getBlockByNumber',params:[number,false]}))) : [];
+    // Headers go in batches of HEADER_BATCH: a busy store or operator wallet can touch more blocks in a
+    // day than an RPC node accepts in one batch (Geth's default limit is 1,000 calls).
+    const headers = [];
+    for (let offset = 0; offset < blocks.length; offset += HEADER_BATCH) {
+      headers.push(...await batch(blocks.slice(offset, offset + HEADER_BATCH).map(number => ({method:'eth_getBlockByNumber',params:[number,false]}))));
+    }
     const timestamps = new Map(blocks.map((number, index) => [number, Number(BigInt(headers[index]?.timestamp || '0x0'))]));
     for (const item of items) item.timestamp = timestamps.get(item.blockNumber);
     // Pin the comparison balance to the same block as the completed scan.

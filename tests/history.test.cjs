@@ -90,6 +90,18 @@ test('removed logs, other contracts and foreign topics are ignored; long ranges 
   assert.deepEqual(ranges, [[0,49999],[50000,99999],[100000,100001]]);
 });
 
+test('block headers for a busy wallet are read in batches of at most 100, below RPC batch limits', async () => {
+  const sizes = [], calls = [];
+  const mock = rpcMock({ calls, latest:'0x5dc', balance:'0x' + (1500).toString(16),
+    incoming:Array.from({ length:1500 }, (_, index) => transferLog({ from:b, to:a, value:1, blockNumber:'0x' + (index + 1).toString(16), hash:'0x' + (index + 1).toString(16).padStart(64, '0') })) });
+  const fetchImpl = (url, request) => { sizes.push(JSON.parse(request.body).length); return mock(url, request); };
+  const loaded = await History.recentTransfers(fetchImpl, { account:a, rpcUrl:'mock', token:{ ...token, deployBlock:0 }, fromBlock:0 });
+  assert.equal(loaded.items.length, 1500);
+  assert.ok(Math.max(...sizes) <= 100);
+  assert.equal(calls.filter(call => call.method === 'eth_getBlockByNumber').length, 1500);
+  assert.ok(loaded.items.every(item => item.timestamp === Number(BigInt(item.blockNumber))));
+});
+
 test('the scan never starts before the token deployment block and refuses an unconfigured token', async () => {
   const calls = [];
   await History.recentTransfers(rpcMock({ calls, latest:'0x64' }), { account:a, rpcUrl:'mock', token:{ ...token, deployBlock:90 }, blockWindow:50 });

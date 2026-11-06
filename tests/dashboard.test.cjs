@@ -106,7 +106,7 @@ function harness({ preview = false, token = TOKEN, fail = false, stored = null }
       if (call.method === 'eth_blockNumber') result = hex(chain.latest);
       else if (call.method === 'eth_getLogs') { const [filter] = call.params; assert.equal(filter.address, tokenAddress); const low = Number(BigInt(filter.fromBlock)), high = Number(BigInt(filter.toBlock)); result = logs.filter(item => { const block = Number(BigInt(item.blockNumber)); return block >= low && block <= high; }); }
       else if (call.method === 'eth_getBalance') result = '0x' + (gas[call.params[0]] ?? 0n).toString(16);
-      else if (call.method === 'eth_getBlockByNumber') result = { number:call.params[0], timestamp:hex(1700000000 - (140 - Number(BigInt(call.params[0]))) * 2) };
+      else if (call.method === 'eth_getBlockByNumber') result = { number:call.params[0], timestamp:hex(1793852200 - (140 - Number(BigInt(call.params[0]))) * 2) };
       return { id:call.id, result };
     }) };
   };
@@ -297,5 +297,12 @@ test('wallet names configured in wallet.js show on every browser and a name type
 
 test('wallet.js lists the operator wallets with their names', () => {
   assert.deepEqual([...Wallet.TOKEN.operatorWallets], ['0x92d0a3c5d5f086db2c94ded1cfac0e0c1798fb16', '0x3a537b4770ab917a5daa231e55d7a0b0b6158ee3']);
-  assert.deepEqual({ ...Wallet.TOKEN.walletNames }, { '0x92d0a3c5d5f086db2c94ded1cfac0e0c1798fb16':'대표님', '0x3a537b4770ab917a5daa231e55d7a0b0b6158ee3':'성원님' });
+  assert.deepEqual({ ...Wallet.TOKEN.walletNames }, { '0x92d0a3c5d5f086db2c94ded1cfac0e0c1798fb16':'대표님', '0x3a537b4770ab917a5daa231e55d7a0b0b6158ee3':'성원님', '0xd6a8daaa3cdf82907bff639d9a686615f658ecd2':'김민주', '0xfc57a8bcfa8a4921a8021b4cd94db52d66cb6b23':'김민주' });
+});
+
+test('aggregate with a startBlock keeps the mint but drops earlier test transfers', () => {
+  const summary = Dashboard.aggregate(logs, { operators:[operator2], startBlock:120 });
+  assert.equal(summary.totalSupply, 1000000000n);
+  assert.deepEqual(summary.transfers.map(item => item.blockNumber), [131, 130, 128, 125, 120]);
+  assert.equal(summary.toppedUp, 10000n);
 });

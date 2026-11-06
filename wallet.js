@@ -25,7 +25,9 @@
     // dashboard popup overrides one here on that browser only.
     walletNames: Object.freeze({
       '0x92d0a3c5d5f086db2c94ded1cfac0e0c1798fb16': '대표님',
-      '0x3a537b4770ab917a5daa231e55d7a0b0b6158ee3': '성원님'
+      '0x3a537b4770ab917a5daa231e55d7a0b0b6158ee3': '성원님',
+      '0xd6a8daaa3cdf82907bff639d9a686615f658ecd2': '김민주',
+      '0xfc57a8bcfa8a4921a8021b4cd94db52d66cb6b23': '김민주'
     }),
     symbol: 'wMST', decimals: 0,
     selectors: Object.freeze({ transfer: '0xa9059cbb', transferWithGas: '0xf620de7c', balanceOf: '0x70a08231', totalSupply: '0x18160ddd' }),

@@ -11,6 +11,7 @@
   'use strict';
   const ZERO = '0x0000000000000000000000000000000000000000';
   const HASH = /^0x[0-9a-f]{64}$/i, ADDRESS = /^0x[0-9a-f]{40}$/i;
+  const OPERATION_START = Date.UTC(2026, 10, 5, 4, 0, 0) / 1000; // 2026-11-05 13:00 KST
   const LOG_CHUNK = 50000, HEADER_BATCH = 100, HEADER_CAP = 300;
   const REFRESH_INTERVAL = 10000, RPC_TIMEOUT = 8000, RECENT_LIMIT = 50;
   const STORES_KEY = 'bazaar-dashboard-stores-v1', OPERATORS_KEY = 'bazaar-dashboard-operators-v1', NAMES_KEY = 'bazaar-dashboard-names-v1', NAME_LIMIT = 20;
@@ -35,11 +36,12 @@
   // between other wallets is a 송금, and moves between operator wallets are 이동 (listed, not totalled).
   // Operator wallets head the list, then stores, then customers numbered in order of their first top-up.
   // The 회수 tag marks a wallet emptied by a send to an operator; any later incoming wMST that refills it clears it.
-  function aggregate(logs, { treasury = null, operators = [], stores = [] } = {}) {
+  // Records before the operation start (11/5 13:00 KST) were tests: only the mint is kept, every other transfer below startBlock is dropped.
+  function aggregate(logs, { treasury = null, operators = [], stores = [], startBlock = 0 } = {}) {
     const rows = mergeLogs([], logs).map(log => ({
       hash:log.transactionHash, blockNumber:blockOf(log.blockNumber), logIndex:blockOf(log.logIndex),
       from:topicAddress(log.topics[1]), to:topicAddress(log.topics[2]), value:BigInt(log.data || '0x0')
-    }));
+    })).filter(row => row.from === ZERO || row.blockNumber >= startBlock);
     let treasuryAddress = treasury ? treasury.toLowerCase() : null, totalSupply = 0n;
     for (const row of rows) if (row.from === ZERO) { totalSupply += row.value; if (!treasuryAddress) treasuryAddress = row.to; }
     const operatorSet = new Set([treasuryAddress, ...operators.map(item => String(item).toLowerCase())].filter(Boolean));
@@ -155,7 +157,7 @@
     const node = id => doc.getElementById(id);
     const rpc = preview || !fetchImpl ? null : createRpc({ fetchImpl, url:Wallet.NETWORK.rpcUrls[0] });
     let storage = null; try { storage = root.localStorage || null; } catch {}
-    let logs = [], cursor = null, summary = null, timestamps = new Map();
+    let logs = [], cursor = null, summary = null, timestamps = new Map(), startBlock = preview ? 0 : null;
     let search = '', sort = { key:'number', direction:'desc' }, error = '', loading = false, updatedAt = null, timer = null, stopped = false;
     let selected = null, selectedFee = null;
     // Store and operator markings are kept per browser; operator markings add to the configured operator wallets.
@@ -172,7 +174,17 @@
     const won = value => UI.won(value);
     const timeOf = block => timestamps.get(block);
     const write = (id, html) => { const target = node(id); if (target && rendered[id] !== html) { target.innerHTML = html; rendered[id] = html; } };
-    const summarize = () => { summary = aggregate(logs, { operators:[...(token.operatorWallets || []), ...operators], stores }); };
+    const summarize = () => { summary = aggregate(logs, { operators:[...(token.operatorWallets || []), ...operators], stores, startBlock }); };
+    // First block at or after OPERATION_START, found once by binary search on block timestamps.
+    async function findStartBlock(latest) {
+      let low = Math.max(0, token.deployBlock || 0), high = latest;
+      while (low < high) {
+        const mid = Math.floor((low + high) / 2);
+        const [header] = await rpc([{ method:'eth_getBlockByNumber', params:[hex(mid), false] }]);
+        if (blockOf(header?.timestamp) >= OPERATION_START) high = mid; else low = mid + 1;
+      }
+      return low;
+    }
     const isStore = address => !!summary?.wallets.find(item => item.address === address)?.isStore;
     function render() {
       if (stopped) return;
@@ -265,6 +277,7 @@
           if (!token || !ADDRESS.test(token.address || '')) throw failure('TOKEN_NOT_CONFIGURED');
           const [latestHex] = await rpc([{ method:'eth_blockNumber', params:[] }]);
           const latest = blockOf(latestHex);
+          if (startBlock == null) startBlock = await findStartBlock(latest);
           let incoming = [];
           for (let low = cursor == null ? Math.max(0, token.deployBlock || 0) : cursor + 1; low <= latest; low += LOG_CHUNK) {
             const high = Math.min(latest, low + LOG_CHUNK - 1);
